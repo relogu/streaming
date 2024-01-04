@@ -42,8 +42,9 @@ def _get_path(prefix_int: int, name: str) -> str:
     Returns:
         str: Unique shared memory name.
     """
-    # FIXME: Adding the parent PID to enable multiprocessing
-    return f'{os.getppid()}_{prefix_int:06}_{name}'
+    # FIXME: Adding a way to enable multiprocessing (independent or collaborative)
+    run_id = os.environ.get('RUN_UUID', str(os.getppid()))
+    return f'{run_id}_{prefix_int:06}_{name}'
 
 
 def _pack_locals(dirnames: List[str], prefix_int: int) -> bytes:
