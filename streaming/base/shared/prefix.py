@@ -8,6 +8,7 @@ prevent shared resources like shared memory from colliding.
 """
 
 from collections import Counter
+import os
 from time import sleep
 from typing import Iterator, List, Tuple, Union
 
@@ -41,7 +42,8 @@ def _get_path(prefix_int: int, name: str) -> str:
     Returns:
         str: Unique shared memory name.
     """
-    return f'{prefix_int:06}_{name}'
+    # FIXME: Adding the parent PID to enable multiprocessing
+    return f'{os.getppid()}_{prefix_int:06}_{name}'
 
 
 def _pack_locals(dirnames: List[str], prefix_int: int) -> bytes:
