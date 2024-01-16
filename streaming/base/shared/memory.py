@@ -11,6 +11,7 @@ from typing import Any, Optional
 
 from streaming.base.constant import TICK
 
+shared_memory_list: list['SharedMemory'] = []
 
 class SharedMemory:
     """Improved quiet implementation of shared memory.
@@ -29,6 +30,7 @@ class SharedMemory:
                  create: Optional[bool] = None,
                  size: int = 0,
                  auto_cleanup: bool = True):
+        shared_memory_list.append(self)
         self.created_shms = []
         self.opened_shms = []
         shm = None
