@@ -29,7 +29,7 @@ class SharedMemory:
                  name: Optional[str] = None,
                  create: Optional[bool] = None,
                  size: int = 0,
-                 auto_cleanup: bool = True):
+                 auto_cleanup: bool = True) -> None:
         shared_memory_list.append(self)
         self.created_shms = []
         self.opened_shms = []
@@ -68,7 +68,7 @@ class SharedMemory:
         if auto_cleanup:
             # atexit handler doesn't get called if the program is killed by a signal not
             # handled by python or when os.exit() is called or for any python internal fatal error.
-            atexit.register(self.cleanup)
+            atexit.register(SharedMemory.cleanup, self)
 
     @property
     def buf(self) -> memoryview:
@@ -109,20 +109,22 @@ class SharedMemory:
             return
         return resource_tracker._resource_tracker.unregister(self, name, rtype)
 
-    def cleanup(self):
+    # staticmethod is used to remove reference to `SharedMemory`
+    @staticmethod
+    def cleanup(shm: 'SharedMemory') -> None:
         """Clean up SharedMemory resources."""
         # save the original unregister tracker function
         original_rtracker_unreg = resource_tracker.unregister
 
         # Close each SharedMemory instance
         try:
-            for shm in self.created_shms:
-                shm.close()
+            for _shm in shm.created_shms:
+                _shm.close()
                 # Destroy the shared memory block
-                shm.unlink()
-            for shm in self.opened_shms:
-                resource_tracker.unregister = self.fix_unregister
-                shm.close()
+                _shm.unlink()
+            for _shm in shm.opened_shms:
+                resource_tracker.unregister = shm.fix_unregister
+                _shm.close()
         # skip the error if a child process already cleaned up the shared memory
         except FileNotFoundError:
             pass

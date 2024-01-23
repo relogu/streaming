@@ -974,8 +974,10 @@ class StreamingDataset(Array, IterableDataset):
         self._shared_barrier(world.workers_per_node)
 
         # Now clean up after ourselves.
-        shape_shm.cleanup()
-        data_shm.cleanup()
+        # shape_shm.cleanup()
+        # data_shm.cleanup()
+        SharedMemory.cleanup(shape_shm)
+        SharedMemory.cleanup(data_shm)
 
         return worker_sample_ids
 
