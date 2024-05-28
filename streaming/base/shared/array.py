@@ -1,4 +1,4 @@
-# Copyright 2023 MosaicML Streaming authors
+# Copyright 2022-2024 MosaicML Streaming authors
 # SPDX-License-Identifier: Apache-2.0
 
 """A numpy array of predetermined shape and dtype that lives in shared memory."""
@@ -24,7 +24,7 @@ class SharedArray:
         self.shape = np.empty(shape).shape
         self.dtype = dtype
         self.name = name
-        size = np.prod(shape) * dtype(0).nbytes
+        size = int(np.prod(shape) * dtype(0).nbytes)
         self.shm = SharedMemory(name=name, size=size)
 
     def numpy(self) -> NDArray:

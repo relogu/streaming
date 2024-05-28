@@ -1,4 +1,4 @@
-# Copyright 2023 MosaicML Streaming authors
+# Copyright 2022-2024 MosaicML Streaming authors
 # SPDX-License-Identifier: Apache-2.0
 
 """:class:`JSONWriter` writes samples to `.json` files that can be read by :class:`JSONReader`."""
@@ -45,6 +45,9 @@ class JSONWriter(SplitWriter):
             max_workers (int): Maximum number of threads used to upload output dataset files in
                 parallel to a remote location. One thread is responsible for uploading one shard
                 file to a remote location. Default to ``min(32, (os.cpu_count() or 1) + 4)``.
+            exist_ok (bool): If the local directory exists and is not empty, whether to overwrite
+                the content or raise an error. `False` raises an error. `True` deletes the
+                content and starts fresh. Defaults to `False`.
     """
 
     format = 'json'

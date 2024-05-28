@@ -1,4 +1,4 @@
-# Copyright 2023 MosaicML Streaming authors
+# Copyright 2022-2024 MosaicML Streaming authors
 # SPDX-License-Identifier: Apache-2.0
 
 """Base classes for computer vision :class:`StreamingDataset`s."""
@@ -122,7 +122,7 @@ class StreamingVisionDataset(StreamingDataset, VisionDataset):
                  cache_limit: Optional[int] = None,
                  partition_algo: str = 'orig',
                  num_canonical_nodes: Optional[int] = None,
-                 batch_size: Optional[int] = None,
+                 batch_size: int,
                  shuffle: bool = False,
                  shuffle_algo: str = 'py1s',
                  shuffle_seed: int = 9176,

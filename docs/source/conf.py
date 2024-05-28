@@ -1,4 +1,4 @@
-# Copyright 2023 MosaicML Streaming authors
+# Copyright 2022-2024 MosaicML Streaming authors
 # SPDX-License-Identifier: Apache-2.0
 
 """Configuration file for the Sphinx documentation builder.
@@ -63,7 +63,7 @@ log = sphinx.util.logging.getLogger(__name__)
 # -- Project information -----------------------------------------------------
 
 project = 'Streaming'
-copyright = '2023, MosaicML, Inc.'
+copyright = '2022, MosaicML, Inc.'
 author = 'MosaicML'
 
 # -- General configuration ---------------------------------------------------
@@ -77,14 +77,15 @@ extensions = [
     'sphinx.ext.extlinks',
     'sphinx.ext.coverage',
     'sphinx.ext.napoleon',
+    'sphinxcontrib.katex',
     'sphinx.ext.viewcode',
     'sphinx.ext.intersphinx',
     'sphinx_copybutton',
     'myst_parser',
     'sphinxarg.ext',
     'sphinx.ext.doctest',
-    'nbsphinx',
     'sphinx_tabs.tabs',
+    'nbsphinx',
 ]
 
 

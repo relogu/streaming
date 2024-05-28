@@ -14,7 +14,7 @@ For an S3 bucket with public access, no additional setup is required, simply spe
 
 ### MosaicML platform
 
-For [MosaicML platform](https://www.mosaicml.com/cloud) users, follow the steps mentioned in the [AWS S3](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/s3.html) MCLI documentation page on how to configure the cloud provider credentials.
+For [MosaicML platform](https://docs.mosaicml.com/projects/mcli/en/latest/) users, follow the steps mentioned in the [AWS S3](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/s3.html) MCLI documentation page on how to configure the cloud provider credentials.
 
 ### Others
 
@@ -35,7 +35,7 @@ Your config and credentials files should follow the standard structure output by
 
 ```
 [default]
-region=us-west-2
+region=<your region, e.g. us-west-2>
 output=json
 
 ```
@@ -44,12 +44,30 @@ output=json
 
 ```
 [default]
-aws_access_key_id=AKIAIOSFODNN7EXAMPLE
-aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+aws_access_key_id=<key ID>
+aws_secret_access_key=<application key>
 
 ```
 
 More details about the authentication can be found [here](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
+
+Alternatively, this can also be set through [environment variables](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html).
+
+````{tabs}
+```{code-tab} py
+import os
+os.environ["AWS_ACCESS_KEY_ID"] = '<key ID>'
+os.environ["AWS_SECRET_ACCESS_KEY"] = '<application key>'
+os.environ["AWS_DEFAULT_REGION"] = '<your region, e.g. us-west-2>'
+```
+
+```{code-tab} sh
+export AWS_ACCESS_KEY_ID='<key ID>'
+export AWS_SECRET_ACCESS_KEY='<application key>'
+export AWS_DEFAULT_REGION='<your region, e.g. us-west-2>'
+```
+````
+
 
 ### Requester Pays Bucket
 
@@ -87,30 +105,41 @@ export S3_CANNED_ACL='authenticated-read'
 ````
 
 ## Any S3 compatible object store
-For any S3 compatible object store such as [Cloudflare R2](https://www.cloudflare.com/products/r2/), [Coreweave](https://docs.coreweave.com/storage/object-storage), [Backblaze b2](https://www.backblaze.com/b2/cloud-storage.html), etc., setup your credentials as mentioned in the above `Amazon S3` section. The only difference is you must set your object store endpoint url. To do this, you need to set the ``S3_ENDPOINT_URL`` environment variable.
+For any S3 compatible object store such as [Cloudflare R2](https://www.cloudflare.com/products/r2/), [Coreweave](https://docs.coreweave.com/storage/object-storage), [Backblaze b2](https://www.backblaze.com/b2/cloud-storage.html), etc., set up your credentials as mentioned in the above `Amazon S3` section. Alternatively, you may use the `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` environment variable names to specify your credentials, even though you are not using AWS. The only difference is that you must set your object store endpoint url. To do this, you need to set the ``S3_ENDPOINT_URL`` environment variable.
 
-Below is one such example, which sets a R2 `endpoint url` in your run environment.
+Below are the examples of setting an R2 or Backblaze `endpoint url` in your run environment.
 
 ```{note}
-Your endpoint url is `https://<accountid>.r2.cloudflarestorage.com`. The account ID can be retrieved through your [Cloudflare console](https://dash.cloudflare.com/).
+R2: Your endpoint url is `https://<accountid>.r2.cloudflarestorage.com`. The account ID can be retrieved through your [Cloudflare console](https://dash.cloudflare.com/).
+Backblaze: Your endpoint url is 'https://s3.<your region>.backblazeb2.com'. The region can be retrieved through your [Backblaze console](https://secure.backblaze.com/b2_buckets.htm).
 ```
 
 ````{tabs}
 ```{code-tab} py
 import os
+# If using R2
 os.environ['S3_ENDPOINT_URL'] = 'https://<accountid>.r2.cloudflarestorage.com'
+# If using Backblaze
+os.environ['S3_ENDPOINT_URL'] = 'https://s3.<your region>.backblazeb2.com'
 ```
 
 ```{code-tab} sh
+# If using R2
 export S3_ENDPOINT_URL='https://<accountid>.r2.cloudflarestorage.com'
+# If using Backblaze
+export S3_ENDPOINT_URL='https://s3.<your region>.backblazeb2.com'
 ```
 ````
+
+
+Note that even with S3 compatible object stores, URLs should be of the form `s3://<bucket name>/<path within the bucket>` and use the `s3://` path prefix, instead of `<endpoint url>/<bucket name>/<path within the bucket>`.
+
 
 ## Google Cloud Storage
 
 ### MosaicML platform
 
-For [MosaicML platform](https://www.mosaicml.com/cloud) users, follow the steps mentioned in the [Google Cloud Storage](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/gcp.html) MCLI documentation page on how to configure the cloud provider credentials.
+For [MosaicML platform](https://docs.mosaicml.com/projects/mcli/en/latest/) users, follow the steps mentioned in the [Google Cloud Storage](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/gcp.html) MCLI documentation page on how to configure the cloud provider credentials.
 
 
 ### GCP User Auth Credentials Mounted as Environment Variables
@@ -164,7 +193,7 @@ export GOOGLE_APPLICATION_CREDENTIALS='KEY_FILE'
 
 ### MosaicML platform
 
-For [MosaicML platform](https://www.mosaicml.com/cloud) users, follow the steps mentioned in the [Oracle Cloud Storage](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/oci.html) MCLI documentation page on how to configure the cloud provider credentials.
+For [MosaicML platform](https://docs.mosaicml.com/projects/mcli/en/latest/) users, follow the steps mentioned in the [Oracle Cloud Storage](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/oci.html) MCLI documentation page on how to configure the cloud provider credentials.
 
 ### Others
 
@@ -230,7 +259,7 @@ See the [Databricks documentation](https://docs.databricks.com/en/dev-tools/auth
 
 ### MosaicML platform
 
-For [MosaicML platform](https://www.mosaicml.com/cloud) users, follow the steps mentioned in the [Databricks](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/databricks.html) MCLI documentation page on how to configure the credentials.
+For [MosaicML platform](https://docs.mosaicml.com/projects/mcli/en/latest/) users, follow the steps mentioned in the [Databricks](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/databricks.html) MCLI documentation page on how to configure the credentials.
 
 ### Others
 
@@ -243,5 +272,52 @@ os.environ['DATABRICKS_TOKEN'] = 'token key'
 ```{code-tab} sh
 export DATABRICKS_HOST='hostname'
 export DATABRICKS_TOKEN='token key'
+```
+````
+
+
+## Alipan
+
+To authenticate Alipan access, users must set their Alipan refresh token (`ALIPAN_WEB_REFRESH_TOKEN`) in the run environment.
+
+To get the refresh token from the Alipan website, the user needs to login to the [Alipan website](https://www.alipan.com/drive), go to the console of the browser's devTools, and pass the code below into the console to get the refresh token.
+
+```javascript
+JSON.parse(localStorage.token).refresh_token;
+```
+
+Then set the refresh token in the run environment.
+
+````{tabs}
+```{code-tab} py
+import os
+os.environ['ALIPAN_WEB_REFRESH_TOKEN'] = 'refresh_token'
+```
+
+```{code-tab} sh
+export ALIPAN_WEB_REFRESH_TOKEN='refresh_token'
+```
+````
+
+### Encryption Data
+
+If you want to encrypt data in cloud storage, you can set the environment variable below to encrypt and decrypt the data.
+
+````{tabs}
+```{code-tab} py
+import os
+os.environ['ALIPAN_ENCRYPT_PASSWORD'] = 'encryption_key'
+
+# For uploading, the encryption type must be set as one of `Simple`, `ChaCha20`, `AES256CBC`
+# When downloading, this environment variable is not required
+os.environ['ALIPAN_ENCRYPT_TYPE'] = 'AES256CBC'
+```
+
+```{code-tab} sh
+export ALIPAN_ENCRYPT_PASSWORD='encryption_key'
+
+# For uploading, the encryption type must be set as one of `Simple`, `ChaCha20`, `AES256CBC`
+# When downloading, this environment variable is not required
+export ALIPAN_ENCRYPT_TYPE='AES256CBC'
 ```
 ````

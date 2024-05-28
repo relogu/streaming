@@ -1,4 +1,4 @@
-# Copyright 2023 MosaicML Streaming authors
+# Copyright 2022-2024 MosaicML Streaming authors
 # SPDX-License-Identifier: Apache-2.0
 
 """Apportion shards/samples such that batches have samples only from a single stream."""
@@ -49,7 +49,8 @@ def generate_work_per_stream_batching(dataset: StreamingDataset, world: World, e
     # nodes/devices/workers. We handle sample_in_epoch (for resumption) at the end.
     partition_per_stream = []
 
-    batch_size = dataset.batch_size or 1
+    batch_size = dataset.batch_size
+    assert isinstance(batch_size, int), f'Batch size must be an integer. Got {type(batch_size)}.'
 
     for stream_id, stream in enumerate(dataset.streams):
         shuffle_units, small_per_big = dataset.resample_streams(epoch, stream_id)

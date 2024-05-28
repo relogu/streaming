@@ -1,4 +1,4 @@
-# Copyright 2023 MosaicML Streaming authors
+# Copyright 2022-2024 MosaicML Streaming authors
 # SPDX-License-Identifier: Apache-2.0
 
 """Shard downloading from various storage providers."""
@@ -21,6 +21,7 @@ __all__ = [
     'download_from_azure_datalake',
     'download_from_databricks_unity_catalog',
     'download_from_dbfs',
+    'download_from_alipan',
     'download_from_local',
 ]
 
@@ -292,9 +293,11 @@ def download_from_azure(remote: str, local: str) -> None:
         credential=os.environ['AZURE_ACCOUNT_ACCESS_KEY'])
     try:
         blob_client = service.get_blob_client(container=obj.netloc, blob=obj.path.lstrip('/'))
-        with open(local, 'wb') as my_blob:
+        local_tmp = local + '.tmp'
+        with open(local_tmp, 'wb') as my_blob:
             blob_data = blob_client.download_blob()
             blob_data.readinto(my_blob)
+        os.rename(local_tmp, local)
     except ResourceNotFoundError as e:
         raise FileNotFoundError(f'Object {remote} not found.') from e
     except Exception:
@@ -324,9 +327,11 @@ def download_from_azure_datalake(remote: str, local: str) -> None:
     try:
         file_client = service.get_file_client(file_system=obj.netloc,
                                               file_path=obj.path.lstrip('/'))
-        with open(local, 'wb') as my_file:
+        local_tmp = local + '.tmp'
+        with open(local_tmp, 'wb') as my_file:
             file_data = file_client.download_file()
             file_data.readinto(my_file)
+        os.rename(local_tmp, local)
     except ResourceNotFoundError as e:
         raise FileNotFoundError(f'Object {remote} not found.') from e
     except Exception:
@@ -418,6 +423,50 @@ def download_from_dbfs(remote: str, local: str) -> None:
     os.rename(local_tmp, local)
 
 
+def download_from_alipan(remote: str, local: str) -> None:
+    """Download a file from remote Alipan to local.
+
+    Args:
+        remote (str): Remote path (Alipan).
+        local (str): Local path (local filesystem).
+    """
+    from alipcs_py.alipcs import AliPCSApiMix
+    from alipcs_py.commands.download import download_file
+
+    web_refresh_token = os.environ['ALIPAN_WEB_REFRESH_TOKEN']
+    web_token_type = 'Bearer'
+    alipan_encrypt_password = os.environ.get('ALIPAN_ENCRYPT_PASSWORD', '').encode()
+
+    api = AliPCSApiMix(web_refresh_token, web_token_type=web_token_type)
+
+    obj = urllib.parse.urlparse(remote)
+    if obj.scheme != 'alipan':
+        raise ValueError(
+            f'Expected obj.scheme to be `alipan`, instead, got {obj.scheme} for remote={remote}')
+    if obj.netloc != '':
+        raise ValueError(
+            f'Expected remote to be alipan:///path/to/some, instead, got remote={remote}')
+
+    remote_path = obj.path
+    filename = pathlib.PosixPath(remote_path).name
+    localdir = pathlib.Path(local).parent
+
+    remote_pcs_file = api.get_file(remotepath=remote_path)
+    if remote_pcs_file is None:
+        raise FileNotFoundError(f'Object {remote} not found.')
+
+    download_file(
+        api,
+        remote_pcs_file,
+        localdir=localdir,
+        downloader='me',
+        concurrency=1,
+        show_progress=False,
+        encrypt_password=alipan_encrypt_password,
+    )
+    os.rename(localdir / filename, local)
+
+
 def download_from_local(remote: str, local: str) -> None:
     """Download a file from remote to local.
 
@@ -470,6 +519,8 @@ def download_file(remote: Optional[str], local: str, timeout: float):
         download_from_databricks_unity_catalog(remote, local)
     elif remote.startswith('dbfs:/'):
         download_from_dbfs(remote, local)
+    elif remote.startswith('alipan://'):
+        download_from_alipan(remote, local)
     else:
         download_from_local(remote, local)
 

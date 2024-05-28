@@ -1,4 +1,4 @@
-# Copyright 2023 MosaicML Streaming authors
+# Copyright 2022-2024 MosaicML Streaming authors
 # SPDX-License-Identifier: Apache-2.0
 
 import json
@@ -111,6 +111,9 @@ def test_number_abbrev_to_int_Exception():
 
 
 def test_clean_stale_shared_memory():
+    # Clean up the stale shared memory
+    clean_stale_shared_memory()
+
     # Create a leaked shared memory
     name = _get_path(0, RESUME)
     _ = BuiltinSharedMemory(name, True, 64)
@@ -170,6 +173,30 @@ def integrity_check(out: Union[str, Tuple[str, str]],
         assert n_shard_files == expected_n_shard_files, f'expected {expected_n_shard_files} shard files but got {n_shard_files}'
 
 
+@pytest.mark.parametrize('scheme', ['gs', 's3', 'oci', 'dbfs'])
+def test_format_remote_index_files(scheme: str):
+    """Validate the format of remote index files."""
+    from streaming.base.util import _format_remote_index_files
+
+    if scheme == 'dbfs':
+        remote = os.path.join('dbfs:/', 'Volumes')
+    else:
+        full_scheme = scheme + '://'
+        remote = os.path.join(full_scheme, MY_BUCKET[full_scheme], MY_PREFIX)
+
+    index_files = [
+        os.path.join('folder_1', 'index.json'),
+        os.path.join('folder_2', 'index.json'),
+        os.path.join('folder_3', 'index.json'),
+    ]
+    remote_index_files = _format_remote_index_files(remote, index_files)
+
+    assert len(remote_index_files) == len(index_files)
+    for file in remote_index_files:
+        obj = urllib.parse.urlparse(file)
+        assert obj.scheme == scheme
+
+
 @pytest.mark.parametrize('index_file_urls_pattern', [1, 2, 3])
 @pytest.mark.parametrize('keep_local', [True, False])
 @pytest.mark.parametrize('scheme', ['gs://', 's3://', 'oci://'])
@@ -207,7 +234,7 @@ def test_merge_index_from_list_local(local_remote_dir: Tuple[str, str], keep_loc
     data = [(1, 'Alice', Decimal('123.45')), (2, 'Bob', Decimal('67.89')),
             (3, 'Charlie', Decimal('987.65'))]
     df = spark.createDataFrame(data=data, schema=schema).repartition(3)
-    mds_kwargs = {'out': mds_out, 'columns': {'id': 'int', 'name': 'str'}, 'keep_local': True}
+    mds_kwargs = {'out': mds_out, 'columns': {'id': 'int32', 'name': 'str'}, 'keep_local': True}
     dataframeToMDS(df, merge_index=False, mds_kwargs=mds_kwargs)
 
     local_cu = CloudUploader.get(local, exist_ok=True, keep_local=True)
@@ -270,7 +297,7 @@ def test_merge_index_from_root_local(local_remote_dir: Tuple[str, str], n_partit
 
     df = spark.createDataFrame(data=data, schema=schema).repartition(n_partitions)
 
-    mds_kwargs = {'out': out, 'columns': {'id': 'int', 'name': 'str'}, 'keep_local': keep_local}
+    mds_kwargs = {'out': out, 'columns': {'id': 'int32', 'name': 'str'}, 'keep_local': keep_local}
 
     mds_path, _ = dataframeToMDS(df, merge_index=False, mds_kwargs=mds_kwargs)
     merge_index(mds_path, keep_local=keep_local)

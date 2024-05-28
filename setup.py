@@ -1,4 +1,4 @@
-# Copyright 2023 MosaicML Streaming authors
+# Copyright 2022-2024 MosaicML Streaming authors
 # SPDX-License-Identifier: Apache-2.0
 
 """Streaming package setup."""
@@ -36,9 +36,9 @@ while True:
 
 classifiers = [
     'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3.8',
     'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10',
+    'Programming Language :: Python :: 3.11',
 ]
 
 install_requires = [
@@ -68,30 +68,36 @@ extra_deps['dev'] = [
     'docformatter>=1.4',
     'jupyter==1.0.0',
     'pre-commit>=2.18.1,<4',
-    'pytest==7.4.4',
+    'pytest==8.2.0',
     'pytest_codeblocks==0.17.0',
-    'pytest-cov>=4,<5',
+    'pytest-cov>=4,<6',
     'toml==0.10.2',
-    'yamllint==1.33.0',
-    'moto>=4.0,<5',
-    'fastapi==0.108.0',
-    'pydantic==2.5.3',
-    'uvicorn==0.25.0',
-    'pytest-split==0.8.1',
+    'yamllint==1.35.1',
+    'moto>=4.0,<6',
+    'fastapi==0.110.2',
+    'pydantic==2.7.1',
+    'uvicorn==0.29.0',
+    'pytest-split==0.8.2',
 ]
 
 extra_deps['docs'] = [
-    'GitPython==3.1.40',
-    'docutils==0.18.1',
-    'furo==2023.7.26',
-    'myst-parser==2.0.0',
-    'nbsphinx==0.9.2',
+    'GitPython==3.1.42',
+    'docutils==0.17.1',
+    'furo==2022.9.29',
+    'myst-parser==0.16.1',
+    'nbsphinx==0.9.1',
     'pandoc==2.3',
-    'pypandoc==1.12',
+    'pypandoc==1.13',
     'sphinx-argparse==0.4.0',
     'sphinx-copybutton==0.5.2',
-    'sphinx==6.2.1',
-    'sphinx-tabs==3.4.4',
+    'sphinx==4.4.0',
+    'sphinx-tabs==3.4.5',
+    'sphinxcontrib.katex==0.9.6',
+    'sphinxcontrib-applehelp==1.0.0',
+    'sphinxcontrib-devhelp==1.0.0',
+    'sphinxcontrib-htmlhelp==2.0.0',
+    'sphinxcontrib-qthelp==1.0.0',
+    'sphinxcontrib-serializinghtml==1.1.5',
 ]
 
 extra_deps['simulator'] = [
@@ -110,7 +116,15 @@ extra_deps['spark'] = [
 ]
 
 extra_deps['databricks'] = [
-    'databricks-sdk==0.14.0',
+    'databricks-sdk==0.27.0',
+]
+
+extra_deps['alipan'] = [
+    'AliPCS-Py>=0.8,<1',
+]
+
+extra_deps['testing'] = [
+    'mosaicml-cli>=0.5.25,<0.7',
 ]
 
 extra_deps['all'] = sorted({dep for deps in extra_deps.values() for dep in deps})
@@ -141,5 +155,5 @@ setup(
     classifiers=classifiers,
     install_requires=install_requires,
     extras_require=extra_deps,
-    python_requires='>=3.8',
+    python_requires='>=3.9',
 )

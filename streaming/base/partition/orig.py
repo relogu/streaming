@@ -1,4 +1,4 @@
-# Copyright 2023 MosaicML Streaming authors
+# Copyright 2022-2024 MosaicML Streaming authors
 # SPDX-License-Identifier: Apache-2.0
 
 """Apportion shards/samples to nodes/ranks/workers for elastically deterministic sample order."""
@@ -19,7 +19,7 @@ def get_partitions_orig(num_samples: int,
                         num_physical_nodes: int,
                         ranks_per_node: int,
                         workers_per_rank: int,
-                        batch_size: Optional[int] = None,
+                        batch_size: int,
                         drop_first: int = 0,
                         initial_physical_nodes: Optional[int] = None) -> NDArray[np.int64]:
     """Partition the given number of samples to nodes, ranks, and workers.
@@ -36,8 +36,8 @@ def get_partitions_orig(num_samples: int,
         num_physical_nodes (int): Number of physical nodes.
         ranks_per_node (int): Number of ranks per node.
         workers_per_rank (int): Number of worker partitions per rank.
-        batch_size (int, optional): Batch size of its DataLoader, which affects how the dataset is
-            partitioned over the workers. Defaults to ``None``.
+        batch_size (int): Batch size of DataLoader and dataset, which affects how the dataset is
+            partitioned over the workers.
         drop_first (int): Number of samples seen already, which are dropped. Defaults to ``0``.
         initial_physical_nodes (int, optional): Number of physical nodes at the start of training.
             Defaults to ``None``.
@@ -61,8 +61,6 @@ def get_partitions_orig(num_samples: int,
                              'the other, otherwise striping slices of shards over nodes may ' +
                              'lead to each node downloading all shards')
 
-    batch_size = batch_size or 1
-
     # If drop_first isn't a multiple of num_physical_nodes, round down to make it divisible.
     if drop_first % num_physical_nodes:
         logger.warning(
@@ -81,7 +79,12 @@ def get_partitions_orig(num_samples: int,
             padding = node_ratio - overflow
     padded_samples_per_canonical_node = samples_per_canonical_node + padding
 
-    if num_samples > num_canonical_nodes:
+    # For samples to be properly split across canonical nodes, there must be more samples than nodes.
+    # The edge case is when the number of samples is equal to the number of canonical nodes, but this only works when
+    #  there is an equal or greater number of canonical nodes than physical nodes.
+    # If these conditions are not met, an alternative sampling approach is used that leads to many repeats.
+    if num_samples > num_canonical_nodes or (num_samples == num_canonical_nodes and
+                                             num_canonical_nodes >= num_physical_nodes):
         # Create the initial sample ID matrix.
         #
         # ids: (canonical nodes, padded samples per canonical node).

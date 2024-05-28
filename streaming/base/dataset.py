@@ -1,17 +1,18 @@
-# Copyright 2023 MosaicML Streaming authors
+# Copyright 2022-2024 MosaicML Streaming authors
 # SPDX-License-Identifier: Apache-2.0
 
 """A mid-epoch-resumable streaming/caching pytorch IterableDataset."""
 
 import json
 import logging
+import mmap
 import os
-import sys
 import warnings
 from concurrent.futures import ThreadPoolExecutor, wait
 from concurrent.futures._base import Future
 from enum import IntEnum
 from math import ceil
+from tempfile import gettempdir
 from threading import Event, Lock
 from time import sleep, time_ns
 from typing import Any, Dict, Iterator, Optional, Sequence, Tuple, Union
@@ -109,14 +110,8 @@ class _Iterator:
         # at shutdown to prevent a deadlock.
         # In python version >=3.9 this can be accomplished via
         # threading._register_atexit but not with the atexit module.
-        # In older python versions, the atexit module can be used, and
-        # threading._register_atexit does not exist.
-        if sys.version_info[1] <= 8:  # check if python version <=3.8
-            import atexit
-            atexit.register(self.non_blocking_exit)
-        else:
-            from threading import _register_atexit  # pyright: ignore
-            _register_atexit(self.non_blocking_exit)
+        from threading import _register_atexit  # pyright: ignore
+        _register_atexit(self.non_blocking_exit)
 
     def non_blocking_exit(self) -> None:
         """Signal threads to exit without blocking.
@@ -291,8 +286,9 @@ class StreamingDataset(Array, IterableDataset):
 
                 For sequential sample ordering, set ``shuffle`` to ``False`` and
                 ``num_canonical_nodes`` to the number of physical nodes of the initial run.
-        batch_size (int, optional): Batch size of its DataLoader, which affects how the dataset is
-            partitioned over the workers. Defaults to ``None``.
+        batch_size (int, optional): Per-device batch size, the same as what is passed to the
+            DataLoader. This affects how the dataset is partitioned over the workers and is
+            necessary for deterministic resumption and optimal performance. Defaults to ``None``.
         shuffle (bool): Whether to iterate over the samples in randomized order. Defaults to
             ``False``.
         shuffle_algo (str): Which shuffling algorithm to use. Defaults to ``py1e``.
@@ -301,11 +297,14 @@ class StreamingDataset(Array, IterableDataset):
             into blocks of this size, and samples within each block are shuffled. If ``None``, its
             value is calculated as ``max(4_000_000 // num_canonical_nodes), 1 << 18)``. Defaults to
             ``None``.
-        batching_method (str): Which batching method to use, either ``random``, ``stratified``, or
-            ``per_stream``. Defaults to ``random``.
+        batching_method (str): Which batching method to use, either ``random``, ``stratified``,
+            ``per_stream``, or ``device_per_stream``. Defaults to ``random``.
         allow_unsafe_types (bool): If a shard contains Pickle, which allows arbitrary code
             execution during deserialization, whether to keep going if ``True`` or raise an error
             if ``False``. Defaults to ``False``.
+        replication (int, optional): Determines how many consecutive devices will receive the same
+            samples. Useful for training with tensor or sequence parallelism, where multiple
+            devices need to see the same partition of the dataset. Defaults to ``None``.
     """
 
     def __init__(self,
@@ -331,7 +330,8 @@ class StreamingDataset(Array, IterableDataset):
                  shuffle_seed: int = 9176,
                  shuffle_block_size: Optional[int] = None,
                  batching_method: str = 'random',
-                 allow_unsafe_types: bool = False) -> None:
+                 allow_unsafe_types: bool = False,
+                 replication: Optional[int] = None) -> None:
         # Global arguments (which do not live in Streams).
         self.predownload = predownload
         self.cache_limit = cache_limit
@@ -346,9 +346,29 @@ class StreamingDataset(Array, IterableDataset):
         self.shuffle_block_size = shuffle_block_size
         self.batching_method = batching_method
         self.allow_unsafe_types = allow_unsafe_types
+        self.replication = replication
+
+        # Initialize the World context.
+        #   * This information is for the per-rank or per-worker process.
+        #   * DataLoader worker processes may get a different worker ID and worker count than rank.
+        #   * We save the rank Worlds here because we cannot instantiate a World inside our
+        #     destructor.
+        #   * `unique_` is who are for coordination purposes, where every process must be unique.
+        #   * `parallel_` is who we think we are for iterating purposes, where groups of process
+        #     must act the same if `replication` is specified.
+        #     This can enable tensor or sequence parallelism.
+        world = World.detect()
+        self._unique_rank_world = world
+        if replication is not None:
+            self._parallel_rank_world = world.replicate(replication)
+        else:
+            self._parallel_rank_world = world.copy()
+        self._unique_worker_world: World
+        self._parallel_worker_world: World
 
         # Initialize initial_physical_nodes to None. If we are resuming, then we will set it to the
-        # number of physical nodes of the initial run in the _resume function.
+        # number of physical nodes of the initial run in the _resume function, or the number of
+        # nodes specified in the `_parallel_rank_world` if using `replication`.
         self.initial_physical_nodes = None
 
         # Check streams vs remote/local.
@@ -368,11 +388,11 @@ class StreamingDataset(Array, IterableDataset):
             raise ValueError(f'`sampling_granularity` must be a positive integer, but got: ' +
                              f'{self.sampling_granularity}.')
 
-        # Check batching method is one of "random", "stratified", or "per_stream".
-        if self.batching_method not in ['random', 'stratified', 'per_stream']:
+        # Check batching method is one of "random", "stratified", "per_stream", or "device_per_stream".
+        if self.batching_method not in ['random', 'stratified', 'per_stream', 'device_per_stream']:
             raise ValueError(
                 f'Invalid batching method: {batching_method}. ' + \
-                f'Must be one of `random`, `stratified`, or `per_stream.'
+                f'Must be one of `random`, `stratified`, `per_stream`, or `device_per_stream`.'
             )
 
         # issue deprecation warning for py1b shuffle algorithm.
@@ -441,13 +461,6 @@ class StreamingDataset(Array, IterableDataset):
         self.streams = streams
         self.num_streams = len(streams)
 
-        # Initialize the World context.
-        #
-        # Beware: This information is for the per-rank process. DataLoader worker processes may see
-        # different values for these fields. We are saving the rank World here because we cannot
-        # instantiate a World inside the StreamingDataset destructor.
-        self._rank_world = world = World()
-
         # Download each stream's index, load their shards, and map streams <-> shards.
         self.num_samples = 0
         self.shards = []
@@ -457,7 +470,7 @@ class StreamingDataset(Array, IterableDataset):
         self.sample_offset_per_stream = np.zeros(self.num_streams, np.int64)
         self.samples_per_stream = np.zeros(self.num_streams, np.int64)
         for stream_id, stream in enumerate(self.streams):
-            stream_shards = stream.get_shards(world, self.allow_unsafe_types)
+            stream_shards = stream.get_shards(self._unique_rank_world, self.allow_unsafe_types)
             num_stream_samples = sum(map(len, stream_shards))
             if not num_stream_samples:
                 index_filename = os.path.join(stream.local, stream.split, get_index_basename())
@@ -503,7 +516,7 @@ class StreamingDataset(Array, IterableDataset):
                                                epoch_size_value, self.shuffle_seed)
 
         # Length (__len__) is the resampled epoch size divided over the number of devices.
-        self.length = ceil(self.epoch_size / world.num_ranks)
+        self.length = ceil(self.epoch_size / self._parallel_rank_world.num_ranks)
 
         # Register/lookup our shared memory prefix and filelock root directory.
         streams_local = [os.path.abspath(os.path.join(x.local, x.split)) for x in streams]
@@ -511,8 +524,8 @@ class StreamingDataset(Array, IterableDataset):
             os.path.join(x.remote, x.split) if x.remote is not None else None for x in streams
         ]
         self._shm_prefix_int, self._locals_shm = get_shm_prefix(streams_local, streams_remote,
-                                                                world)
-        self._filelock_root = os.path.join(os.path.sep, 'tmp', f'{os.environ.get("USER", "mosaicml")}', 'streaming')
+                                                                self._unique_rank_world)
+        self._filelock_root = os.path.join(gettempdir(), 'streaming')
         os.makedirs(self._filelock_root, exist_ok=True)
 
         # Create the shared memory-backed barrier, without its lock, which is unpickleable.
@@ -546,7 +559,7 @@ class StreamingDataset(Array, IterableDataset):
                                                _get_path(self._shm_prefix_int, SHARD_ACCESS_TIMES))
 
         # Initialize shared memory objects.
-        if world.is_local_leader:
+        if self._unique_rank_world.is_local_leader:
             # Set initial epoch (before any resumption).
             self.next_epoch = 0
 
@@ -726,11 +739,10 @@ class StreamingDataset(Array, IterableDataset):
 
         return epoch, sample_in_epoch
 
-    def _resume_incr_epoch(self, world: World) -> Tuple[int, int]:
+    def _resume_incr_epoch(self) -> Tuple[int, int]:
         """Start or resume training, pre-incrementing the next epoch.
 
-        Args:
-            world (World): World state.
+        This is called on each worker.
 
         Returns:
             Tuple[int, int]: What epoch this is, and sample offset in that epoch.
@@ -742,13 +754,13 @@ class StreamingDataset(Array, IterableDataset):
 
         # Either resume from checkpoint, or start from scratch.
         presumed_epoch = self.next_epoch
-        epoch, sample_in_epoch = self._resume(world, presumed_epoch)
+        epoch, sample_in_epoch = self._resume(self._parallel_worker_world, presumed_epoch)
 
         # Wait for everyone to get the epoch above.
-        self._shared_barrier(world.workers_per_node)
+        self._shared_barrier(self._unique_worker_world.workers_per_node)
 
         # Set the new next epoch.
-        if world.is_local_leader:
+        if self._unique_worker_world.is_local_leader:
             self.next_epoch = epoch + 1
 
         return epoch, sample_in_epoch
@@ -769,7 +781,7 @@ class StreamingDataset(Array, IterableDataset):
         Returns:
             Dict[str, Any]: The state.
         """
-        world = World()
+        world = self._parallel_rank_world
         epoch = self.next_epoch - 1
         epoch, offset = self._resume(world, epoch)
         if from_beginning:
@@ -803,12 +815,34 @@ class StreamingDataset(Array, IterableDataset):
         Args:
             obj (Dict[str, Any]): The state.
         """
+        # Set shared memory block to be 1024 characters long. This enables calling
+        # `load_state_dict` multiple times without needing to resize the shared memory block.
+        # Resizing the shared memory block is not possible, and closing the shared memory block
+        # and replacing it with a new one is causing great difficulties.
+
         name = _get_path(self._shm_prefix_int, RESUME)
-        data = json.dumps(obj, sort_keys=True).encode('utf-8')
+        data = json.dumps(obj, sort_keys=True)
+
+        len_needed = len(data)
+        # Note: mmap.PAGESIZE has a minimum size of 4096 bytes across systems. For reference,
+        # see the link below:
+        # https://en.wikipedia.org/wiki/Page_(computer_memory)#Multiple_page_sizes
+        if len_needed > mmap.PAGESIZE:
+            raise ValueError(
+                f'The StreamingDataset state dict for resumption is currently ',
+                f'allocated {mmap.PAGESIZE} bytes, insufficient to store the ',
+                f'state dict that was attempted to load in, which uses {len_needed} ',
+                f'bytes. Please increase the bytes allocated to the state dict by ',
+                f'changing the SharedMemory size parameter, set in this function.',
+                f'The state dict may also be corrupted. The state dict is: {data}.')
         # Some platforms choose to allocate chunks of memory based upon that platform's memory page
         # size, hence the exact size of the shared memory block that was returned may be larger
         # than what was requested.
-        self._resume_shm = SharedMemory(name=name, size=len(data))
+        self._resume_shm = SharedMemory(name=name, size=mmap.PAGESIZE)
+        # Write a null byte at the end of the shared memory block so that we read in the state
+        # dict correctly in `_resume`.
+        data += '\0'
+        data = data.encode('utf-8')
         self._resume_shm.buf[:len(data)] = data
 
     def resample_streams(
@@ -941,11 +975,10 @@ class StreamingDataset(Array, IterableDataset):
 
         return sample_ids, shape_shm, data_shm
 
-    def _get_work(self, world: World, epoch: int, sample_in_epoch: int) -> NDArray[np.int64]:
+    def _get_work(self, epoch: int, sample_in_epoch: int) -> NDArray[np.int64]:
         """Get this worker's partition of this epoch's sample space.
 
         Args:
-            world (World): World state.
             epoch (int): Which epoch it is.
             sample_in_epoch (int): Where we are in the epoch.
 
@@ -957,21 +990,37 @@ class StreamingDataset(Array, IterableDataset):
         if not hasattr(self._shared_barrier, 'lock'):
             self._shared_barrier.lock = FileLock(self._shared_barrier.filelock_path)
 
+        u_world = self._unique_worker_world
+        p_world = self._parallel_worker_world
+
         # Do expensive work that may use a lot of cores/memory just once, in the local leader.
-        if world.is_local_leader:
-            epoch_sample_ids = generate_work(self.batching_method, self, world, epoch,
+        if u_world.is_local_leader:
+            if self.replication is not None and not u_world.worker_of_rank:
+                logger.warning(f'The `replication` arg has been set and training is resuming ' +
+                               f'from sample {sample_in_epoch}. Make sure you are accounting ' +
+                               f"for sample replication when using StreamingDataset's " +
+                               f'`state_dict` method for deterministic resumption. Otherwise, ' +
+                               f'you will resume training from the wrong sample.')
+            # Ensure that batch_size is passed in, and is an integer. This is necessary for
+            # deterministic resumption and optimal performance.
+            if not isinstance(self.batch_size, int):
+                raise ValueError(f'Please pass `batch_size` to StreamingDataset. It should be ' +
+                                 f'set the same as the DataLoader, and is the number of samples ' +
+                                 f'per batch, for each device. It is necessary for ' +
+                                 f'deterministic resumption and optimal performance.')
+            epoch_sample_ids = generate_work(self.batching_method, self, p_world, epoch,
                                              sample_in_epoch)
             shape_shm, data_shm = self._share_work(epoch_sample_ids)
-            self._shared_barrier(world.workers_per_node)
+            self._shared_barrier(u_world.workers_per_node)
         else:
-            self._shared_barrier(world.workers_per_node)
+            self._shared_barrier(u_world.workers_per_node)
             epoch_sample_ids, shape_shm, data_shm = self._attach_work()
 
         # Each worker gets their portion of the work.
-        worker_sample_ids = epoch_sample_ids[world.node, world.rank_of_node,
-                                             world.worker_of_rank].flatten()
+        worker_sample_ids = epoch_sample_ids[p_world.node, p_world.rank_of_node,
+                                             p_world.worker_of_rank].flatten()
 
-        self._shared_barrier(world.workers_per_node)
+        self._shared_barrier(u_world.workers_per_node)
 
         # Now clean up after ourselves.
         # shape_shm.cleanup()
@@ -1415,11 +1464,12 @@ class StreamingDataset(Array, IterableDataset):
 
         # Discover where we left off, if there is a checkpoint, or start at the next epoch.
         # Also pre-increment the epoch counter.
-        world = World()
-        epoch, sample_in_epoch = self._resume_incr_epoch(world)
+        self._unique_worker_world = self._unique_rank_world.detect_workers()
+        self._parallel_worker_world = self._parallel_rank_world.detect_workers()
+        epoch, sample_in_epoch = self._resume_incr_epoch()
 
         # Get this worker's partition of samples to process.
-        sample_ids = self._get_work(world, epoch, sample_in_epoch)
+        sample_ids = self._get_work(epoch, sample_in_epoch)
         if not len(sample_ids):  # Resumed at end of epoch, out of samples.
             return
 
