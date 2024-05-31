@@ -997,10 +997,7 @@ class StreamingDataset(Array, IterableDataset):
         if u_world.is_local_leader:
             if self.replication is not None and not u_world.worker_of_rank:
                 logger.warning(f'The `replication` arg has been set and training is resuming ' +
-                               f'from sample {sample_in_epoch}. Make sure you are accounting ' +
-                               f"for sample replication when using StreamingDataset's " +
-                               f'`state_dict` method for deterministic resumption. Otherwise, ' +
-                               f'you will resume training from the wrong sample.')
+                               f'from sample {sample_in_epoch}.')
             # Ensure that batch_size is passed in, and is an integer. This is necessary for
             # deterministic resumption and optimal performance.
             if not isinstance(self.batch_size, int):
