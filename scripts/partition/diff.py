@@ -5,7 +5,6 @@
 
 from argparse import ArgumentParser, Namespace
 from time import time
-from typing import List
 
 import numpy as np
 from tqdm import tqdm
@@ -31,7 +30,7 @@ def parse_args() -> Namespace:
     return args.parse_args()
 
 
-def parse(text: str) -> List[int]:
+def parse(text: str) -> list[int]:
     """Parse an int range.
 
     Args:

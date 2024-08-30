@@ -17,6 +17,11 @@ select = [
     "LOG",
     "PERF",
     "PLE",
+    "UP006",
+    "F401",
+]
+extend-safe-fixes = [
+    "UP006",
 ]
 ignore = [
     "C408",
@@ -37,6 +42,7 @@ ignore = [
 ]
 
 [tool.ruff]
+target-version = "py39"
 exclude = [
     "build/**",
     "docs/**",
@@ -101,7 +107,7 @@ reportUnusedCoroutine = "error"
 # Pytest
 [tool.pytest.ini_options]
 # By default, do not run remote tests
-addopts = "--cov=streaming --cov-fail-under=50 --codeblocks --strict-markers -m 'not daily and not remote' -ra --tb=native"
+addopts = "--cov=streaming --cov-fail-under=50 --codeblocks --strict-markers -m 'not daily and not remote' -ra --tb=native --color=yes"
 
 markers = [
     # For distributed testing

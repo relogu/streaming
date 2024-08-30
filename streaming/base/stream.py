@@ -7,7 +7,7 @@ import hashlib
 import json
 import os
 import tempfile
-from typing import List, Optional, Sequence, Tuple
+from typing import Optional, Sequence
 
 import numpy as np
 from numpy.typing import NDArray
@@ -147,10 +147,11 @@ class Stream:
             self.local = self._get_temporary_directory()
             if get_local_rank() == 0:
                 if os.path.exists(self.local):
-                    raise ValueError(
-                        f'Could not create a temporary local directory {self.local} . Either ' +
-                        f'delete the directory or specify a unique local directory with the ' +
-                        f'`local` value.')
+                    raise FileExistsError(
+                        f'Could not create a temporary local directory {self.local} because it ' +
+                        f'already exists. If you want to reuse the locally cached dataset, ' +
+                        f'explicitly pass in a unique local directory with the `local` argument.' +
+                        f' Otherwise, delete this directory and retry.')
                 os.makedirs(self.local)
             barrier()
         else:
@@ -193,7 +194,7 @@ class Stream:
             self.safe_keep_zip = default['keep_zip'] or self.remote in {None, self.local}
 
     @classmethod
-    def validate_weights(cls, streams: Sequence[Self]) -> Tuple[bool, bool]:
+    def validate_weights(cls, streams: Sequence[Self]) -> tuple[bool, bool]:
         """Validate stream weights, returning whether relative or absolute weighting was used.
 
         Args:
@@ -287,7 +288,7 @@ class Stream:
             stream.repeat = repeat
             stream.choose = choose
 
-        return choose_per_epoch
+        return int(choose_per_epoch)
 
     def _download_file(self, from_basename: str, to_basename: Optional[str] = None) -> str:
         """Safely download a file from remote to local cache.
@@ -421,7 +422,7 @@ class Stream:
             delta += self._prepare_shard_part(raw_info, zip_info, shard.compression)
         return delta
 
-    def get_shards(self, world: World, allow_unsafe_types: bool) -> List[Reader]:
+    def get_shards(self, world: World, allow_unsafe_types: bool) -> list[Reader]:
         """Load this Stream's index, retrieving its shard readers.
 
         Args:
@@ -453,8 +454,8 @@ class Stream:
                 wait_for_file_to_exist(
                     filename, TICK, self.download_timeout,
                     f'Index file {os.path.join(self.remote or "", self.split or "", basename)} ' +
-                    f'-> {filename} took too long to download. Either increase the ' +
-                    f'`download_timeout` value or check the other traceback.')
+                    f'-> {filename} took too long to download or failed to download. Either increase the '
+                    + f'`download_timeout` value or check the local rank 0 traceback.')
 
         # Load the index.
         try:
@@ -477,7 +478,7 @@ class Stream:
 
         return shards
 
-    def set_up_local(self, shards: List[Reader], cache_usage_per_shard: NDArray[np.int64]) -> None:
+    def set_up_local(self, shards: list[Reader], cache_usage_per_shard: NDArray[np.int64]) -> None:
         """Bring a local directory into a consistent state, getting which shards are present.
 
         Args:

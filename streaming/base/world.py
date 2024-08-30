@@ -3,7 +3,7 @@
 
 """Information about nodes, ranks, and workers."""
 
-from typing import Any, Dict, Tuple
+from typing import Any
 
 from torch.utils.data import get_worker_info
 from typing_extensions import Self
@@ -65,7 +65,7 @@ class World:
         self.is_leader = not worker
         self.is_local_leader = not self.worker_of_node
 
-    def to_json(self) -> Dict[str, Any]:
+    def to_json(self) -> dict[str, Any]:
         """Get a JSON version of this config.
 
         Returns:
@@ -74,7 +74,7 @@ class World:
         return dict(self.__dict__)
 
     @classmethod
-    def _get_worker_info(cls) -> Tuple[int, int]:
+    def _get_worker_info(cls) -> tuple[int, int]:
         """Get worker info, or default to 0 of 1.
 
         Returns:
@@ -133,7 +133,12 @@ class World:
         rank = self.rank // replication  # Evenly divide ranks.
         num_ranks = self.num_ranks // replication  # Floor divide our rank.
         worker = rank * self.workers_per_rank + self.worker_of_rank  # Derive worker.
-        num_nodes = (num_ranks + self.ranks_per_node - 1) // self.ranks_per_node  # Ceil divide.
+        # Attempt to evenly divide ranks per node. If not possible, the World
+        # object will just use one node.
+        if num_ranks % self.ranks_per_node == 0:
+            num_nodes = num_ranks // self.ranks_per_node
+        else:
+            num_nodes = 1
         ranks_per_node = num_ranks // num_nodes  # Evenly divide ranks per node.
         return World(
             num_nodes=num_nodes,

@@ -4,10 +4,11 @@
 import json
 import tempfile
 from decimal import Decimal
-from typing import Any, Tuple, Union
+from typing import Any, Union
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 from PIL import Image
 
 import streaming.base.format.json.encodings as jsonEnc
@@ -98,7 +99,7 @@ class TestMDSEncodings:
         (1, 256, 1),
         (65536, 7, 1),
     ])
-    def test_ndarray_encode_decode(self, dtype_str: str, shape: Tuple[int]):
+    def test_ndarray_encode_decode(self, dtype_str: str, shape: tuple[int]):
         dtype = getattr(np, dtype_str)
         a = np.random.randint(0, 1000, shape).astype(dtype)
 
@@ -131,6 +132,19 @@ class TestMDSEncodings:
 
         assert b3_len < b2_len < b1_len
         assert b3_len == np.prod(shape) * dtype().nbytes
+
+    def test_error_no_elements_ndarray(self):
+        encoding = 'ndarray'
+        with pytest.raises(ValueError,
+                           match='Attempting to encode a numpy array with 0 elements.*'):
+            _ = mdsEnc.mds_encode(encoding, np.array([]))
+
+    @pytest.mark.parametrize('array', [np.array(0.5), np.empty(()), np.array(1)])
+    def test_error_scalar_ndarray(self, array: NDArray):
+        encoding = 'ndarray'
+        with pytest.raises(ValueError,
+                           match='Attempting to encode a scalar with NDArray encoding.*'):
+            _ = mdsEnc.mds_encode(encoding, array)
 
     @pytest.mark.parametrize('mode', ['I', 'L', 'RGB'])
     def test_pil_encode_decode(self, mode: str):
@@ -187,7 +201,7 @@ class TestMDSEncodings:
 
         # Creating the (32 x 32) NumPy Array with random values
         size = {'RGB': (224, 224, 3), 'L': (28, 28)}[mode]
-        np_data = np.random.randint(255, size=size, dtype=np.uint8)
+        np_data = np.array(np.random.randint(255, size=size, dtype=np.uint8))
         # Default image mode of PIL Image is 'I'
         img = Image.fromarray(np_data).convert(mode)
 

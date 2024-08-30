@@ -9,9 +9,9 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from tests.common.utils import compressed_local_remote_dir  # pyright: ignore
-from tests.common.utils import get_free_tcp_port  # pyright: ignore
-from tests.common.utils import local_remote_dir  # pyright: ignore
+from tests.common.utils import compressed_local_remote_dir  # pyright: ignore # noqa: F401
+from tests.common.utils import get_free_tcp_port  # pyright: ignore # noqa: F401
+from tests.common.utils import local_remote_dir  # pyright: ignore # noqa: F401
 
 MY_BUCKET = 'streaming-test-bucket'
 MY_PREFIX = 'train'
@@ -49,6 +49,12 @@ def aws_credentials():
     os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
     os.environ['AWS_SECURITY_TOKEN'] = 'testing'
     os.environ['AWS_SESSION_TOKEN'] = 'testing'
+
+
+@pytest.fixture(scope='class', autouse=True)
+def hf_credentials():
+    """Mocked HF Credentials."""
+    os.environ['HF_TOKEN'] = 'testing'
 
 
 @pytest.fixture()

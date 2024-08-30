@@ -15,7 +15,7 @@ from math import ceil
 from tempfile import gettempdir
 from threading import Event, Lock
 from time import sleep, time_ns
-from typing import Any, Dict, Iterator, Optional, Sequence, Tuple, Union
+from typing import Any, Iterator, Optional, Sequence, Union
 
 import numpy as np
 from filelock import FileLock
@@ -427,6 +427,9 @@ class StreamingDataset(Array, IterableDataset):
             if epoch_size_value < 0:
                 raise ValueError(f'Epoch size cannot be negative. Received {epoch_size_value}.')
 
+        # Determine if we should be changing the seed every epoch
+        self.epoch_seed_change = self.shuffle and self.sampling_method == 'balanced'
+
         # Initialize torch dist ourselves, if necessary.
         destroy_dist = maybe_init_dist()
 
@@ -673,7 +676,7 @@ class StreamingDataset(Array, IterableDataset):
             self.shuffle_block_size = max(4_000_000 // self.num_canonical_nodes, 1 << 18) \
                 if self.num_canonical_nodes is not None else 1 << 18
 
-    def _resume(self, world: World, epoch: int) -> Tuple[int, int]:
+    def _resume(self, world: World, epoch: int) -> tuple[int, int]:
         """Either resume from checkpoint or start at the beginning.
 
         Args:
@@ -739,7 +742,7 @@ class StreamingDataset(Array, IterableDataset):
 
         return epoch, sample_in_epoch
 
-    def _resume_incr_epoch(self) -> Tuple[int, int]:
+    def _resume_incr_epoch(self) -> tuple[int, int]:
         """Start or resume training, pre-incrementing the next epoch.
 
         This is called on each worker.
@@ -765,7 +768,7 @@ class StreamingDataset(Array, IterableDataset):
 
         return epoch, sample_in_epoch
 
-    def state_dict(self, num_samples: int, from_beginning: bool) -> Dict[str, Any]:
+    def state_dict(self, num_samples: int, from_beginning: bool) -> dict[str, Any]:
         """Get a dict containing training state (called from non-worker process).
 
         This is called on rank zero.
@@ -803,7 +806,7 @@ class StreamingDataset(Array, IterableDataset):
             'initial_physical_nodes': initial_physical_nodes,
         }
 
-    def load_state_dict(self, obj: Dict[str, Any]) -> None:
+    def load_state_dict(self, obj: dict[str, Any]) -> None:
         """Load a dict containing training state (called from non-worker process).
 
         This is called on each copy of the dataset when resuming.
@@ -848,7 +851,7 @@ class StreamingDataset(Array, IterableDataset):
     def resample_streams(
             self,
             epoch: int,
-            stream_id: Optional[int] = None) -> Tuple[NDArray[np.int64], NDArray[np.int64]]:
+            stream_id: Optional[int] = None) -> tuple[NDArray[np.int64], NDArray[np.int64]]:
         """Perform the up/down-sampling needed to generate the weighted epoch.
 
         Args:
@@ -880,10 +883,11 @@ class StreamingDataset(Array, IterableDataset):
             samples_per_stream_shard = self.samples_per_shard[stream_shard_ids]
             # the number of items to choose from each stream, obtained during initialization
             stream_choose = self.streams[stream_id].choose
-            use_epoch = self.sampling_method == 'balanced'
+            # When shuffling is enabled, each epoch has a different rng.
+            # Otherwise, we keep the rng the same to keep the sample ordering deterministic.
             choose_per_stream_shard = get_sampling(samples_per_stream_shard, stream_choose,
                                                    self.sampling_granularity, self.shuffle_seed,
-                                                   epoch, use_epoch)
+                                                   epoch, self.epoch_seed_change)
 
             # Iterate over each shard of this stream.
             for shard_id, shard_samples, shard_choose in zip(stream_shard_ids,
@@ -922,14 +926,18 @@ class StreamingDataset(Array, IterableDataset):
         sample_ids = np.concatenate(sample_ids).astype(np.int64)
         return shuffle_units, sample_ids
 
-    def _share_work(self, sample_ids: NDArray[np.int64]) -> Tuple[SharedMemory, SharedMemory]:
+    def _share_work(
+        self,
+        sample_ids: NDArray[np.int64],
+    ) -> tuple[SharedMemory, Optional[SharedMemory]]:
         """Put an epoch's sample ordering into shared memory.
 
         Args:
             sample_ids (NDArray[np.int64]): Sample IDs.
 
         Returns:
-            Tuple[SharedMemory, SharedMemory]: Shared memory arrays containing shape and data.
+            Tuple[SharedMemory, Optional[SharedMemory]]: Shared memory arrays containing shape and
+                data, if present.
         """
         ndim = 5
 
@@ -945,19 +953,26 @@ class StreamingDataset(Array, IterableDataset):
         shape_shm = SharedMemory(name=name, create=True, size=size, auto_cleanup=False)
         shape_shm.buf[:size] = np.array(sample_ids.shape, np.int64).tobytes()
 
-        # Save the generated epoch data to shared memory.
-        name = _get_path(self._shm_prefix_int, EPOCH_DATA)
-        size = sample_ids.size * np.int64().nbytes
-        data_shm = SharedMemory(name=name, create=True, size=size, auto_cleanup=False)
-        data_shm.buf[:size] = sample_ids.tobytes()
+        if sample_ids.size > 0:
+            # Save the generated epoch data to shared memory, but only if the sample partition is
+            # non-empty. Otherwise, the end of the epoch has been reached.
+            name = _get_path(self._shm_prefix_int, EPOCH_DATA)
+            size = sample_ids.size * np.int64().nbytes
+            data_shm = SharedMemory(name=name, create=True, size=size, auto_cleanup=False)
+            data_shm.buf[:size] = sample_ids.tobytes()
 
-        return shape_shm, data_shm
+            return shape_shm, data_shm
 
-    def _attach_work(self) -> Tuple[NDArray[np.int64], SharedMemory, SharedMemory]:
+        else:
+
+            return shape_shm, None
+
+    def _attach_work(self) -> tuple[NDArray[np.int64], SharedMemory, Optional[SharedMemory]]:
         """Get an epoch's sample ordering from shared memory.
 
         Returns:
-            NDArray[np.int64]: Sample IDs.
+            Tuple[NDArray[np.int64], SharedMemory, Optional[SharedMemory]]: Sample IDs, shared
+                memory array for shape, and shared memory array for data, if present.
         """
         ndim = 5
 
@@ -967,13 +982,22 @@ class StreamingDataset(Array, IterableDataset):
         shape_shm = SharedMemory(name=name, create=False, size=size, auto_cleanup=False)
         shape = tuple(np.ndarray(5, buffer=shape_shm.buf, dtype=np.int64))
 
-        # Attach to the generated epoch data in shared memory.
-        name = _get_path(self._shm_prefix_int, EPOCH_DATA)
-        size = int(np.prod(shape)) * np.int64().nbytes
-        data_shm = SharedMemory(name=name, create=False, size=size, auto_cleanup=False)
-        sample_ids = np.ndarray(shape, buffer=data_shm.buf, dtype=np.int64)
+        num_elements = int(np.prod(shape))
 
-        return sample_ids, shape_shm, data_shm
+        if num_elements > 0:
+            # Attach to the generated epoch data in shared memory, but only if the sample partition
+            # is non-empty. Otherwise, the end of the epoch has been reached.
+            name = _get_path(self._shm_prefix_int, EPOCH_DATA)
+            size = num_elements * np.int64().nbytes
+            data_shm = SharedMemory(name=name, create=False, size=size, auto_cleanup=False)
+            sample_ids = np.ndarray(shape, buffer=data_shm.buf, dtype=np.int64)
+
+            return sample_ids, shape_shm, data_shm
+
+        else:
+
+            sample_ids = np.empty(shape=shape, dtype=np.int64)
+            return sample_ids, shape_shm, None
 
     def _get_work(self, epoch: int, sample_in_epoch: int) -> NDArray[np.int64]:
         """Get this worker's partition of this epoch's sample space.
@@ -995,9 +1019,13 @@ class StreamingDataset(Array, IterableDataset):
 
         # Do expensive work that may use a lot of cores/memory just once, in the local leader.
         if u_world.is_local_leader:
-            if self.replication is not None and not u_world.worker_of_rank:
-                logger.warning(f'The `replication` arg has been set and training is resuming ' +
-                               f'from sample {sample_in_epoch}.')
+            if self.replication is not None and self.replication > 1 and not u_world.worker_of_rank:
+                logger.warning(
+                    f'The `replication` arg has been set to {self.replication} and ' +
+                    f'training is resuming from sample {sample_in_epoch}. ' +
+                    f'Make sure you are accounting for sample replication when using ' +
+                    f"StreamingDataset's `state_dict` method for deterministic resumption. " +
+                    f'Otherwise, you will resume training from the wrong sample.')
             # Ensure that batch_size is passed in, and is an integer. This is necessary for
             # deterministic resumption and optimal performance.
             if not isinstance(self.batch_size, int):
@@ -1020,10 +1048,10 @@ class StreamingDataset(Array, IterableDataset):
         self._shared_barrier(u_world.workers_per_node)
 
         # Now clean up after ourselves.
-        # shape_shm.cleanup()
-        # data_shm.cleanup()
         SharedMemory.cleanup(shape_shm)
-        SharedMemory.cleanup(data_shm)
+        # Can be None if the sample partition was empty.
+        if data_shm is not None:
+            SharedMemory.cleanup(data_shm)
 
         return worker_sample_ids
 
@@ -1303,7 +1331,11 @@ class StreamingDataset(Array, IterableDataset):
                 break
 
             # If we're out of samples this epoch, exit this thread because we are done downloading.
-            if it.prepare_index == it.total:
+            # Or, if the ready_index has reached the end, exit this thread to unblock other threads.
+            # The second scenario is rare, where ready_thread has higher priority and progresses way
+            # faster than this thread, which means at the end of epoch all other threads need to wait.
+            if it.prepare_index == it.total or it.ready_index == it.total:
+                it.prepare_index = it.total
                 break
 
             # Background thread or a main process crashed, terminate this thread.
@@ -1440,7 +1472,7 @@ class StreamingDataset(Array, IterableDataset):
         # Note that we exited.
         it.on_exit()
 
-    def __iter__(self) -> Iterator[Dict[str, Any]]:
+    def __iter__(self) -> Iterator[dict[str, Any]]:
         """Iterate over all the samples in our partition.
 
         Returns:

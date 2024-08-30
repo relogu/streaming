@@ -13,7 +13,7 @@ from concurrent.futures._base import Future
 from threading import Event
 from time import sleep
 from types import TracebackType
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Optional, Union
 
 from typing_extensions import Self
 
@@ -72,10 +72,10 @@ class Writer(ABC):
 
     def __init__(self,
                  *,
-                 out: Union[str, Tuple[str, str]],
+                 out: Union[str, tuple[str, str]],
                  keep_local: bool = False,
                  compression: Optional[str] = None,
-                 hashes: Optional[List[str]] = None,
+                 hashes: Optional[list[str]] = None,
                  size_limit: Optional[Union[int, str]] = 1 << 26,
                  extra_bytes_per_shard: int = 0,
                  extra_bytes_per_sample: int = 0,
@@ -99,6 +99,10 @@ class Writer(ABC):
             if size_limit_value < 0:
                 raise ValueError(f'`size_limit` must be greater than zero, instead, ' +
                                  f'found as {size_limit_value}.')
+            if size_limit_value >= 2**32:
+                raise ValueError(f'`size_limit` must be less than 2**32, instead, ' +
+                                 f'found as {size_limit_value}. This is because sample ' +
+                                 f'byte offsets are stored with uint32.')
 
         # Validate keyword arguments
         invalid_kwargs = [
@@ -114,13 +118,13 @@ class Writer(ABC):
         self.size_limit = size_limit_value
         self.extra_bytes_per_shard = extra_bytes_per_shard
         self.extra_bytes_per_sample = extra_bytes_per_sample
-        self.new_samples: List[bytes]
+        self.new_samples: list[bytes]
         self.new_shard_size: int
 
         self.shards = []
 
         # Remove local directory if requested prior to creating writer
-        local = out if isinstance(out, str) else out[0]
+        local = os.path.expanduser(out) if isinstance(out, str) else os.path.expanduser(out[0])
         if os.path.exists(local) and kwargs.get('exist_ok', False):
             logger.warning(
                 f'Directory {local} exists and is not empty; exist_ok is set to True so will remove contents.'
@@ -147,7 +151,7 @@ class Writer(ABC):
         self.new_shard_size = self.extra_bytes_per_shard
 
     @abstractmethod
-    def encode_sample(self, sample: Dict[str, Any]) -> bytes:
+    def encode_sample(self, sample: dict[str, Any]) -> bytes:
         """Encode a sample dict to bytes.
 
         Args:
@@ -158,7 +162,7 @@ class Writer(ABC):
         """
         raise NotImplementedError
 
-    def _name_next_shard(self, extension: Optional[str] = None) -> Tuple[str, Optional[str]]:
+    def _name_next_shard(self, extension: Optional[str] = None) -> tuple[str, Optional[str]]:
         """Get the filenames of the next shard to be created.
 
         Args:
@@ -180,7 +184,7 @@ class Writer(ABC):
             zip_basename = None
         return raw_basename, zip_basename
 
-    def _hash(self, data: bytes, basename: str) -> Dict[str, Any]:
+    def _hash(self, data: bytes, basename: str) -> dict[str, Any]:
         """Generate file metadata.
 
         Args:
@@ -196,7 +200,7 @@ class Writer(ABC):
         return {'basename': basename, 'bytes': len(data), 'hashes': hashes}
 
     def _process_file(self, raw_data: bytes, raw_basename: str,
-                      zip_basename: Optional[str]) -> Tuple[dict, Optional[dict]]:
+                      zip_basename: Optional[str]) -> tuple[dict, Optional[dict]]:
         """Process and save a shard file (hash, compress, hash, write).
 
         Args:
@@ -222,7 +226,7 @@ class Writer(ABC):
             out.write(data)
         return raw_info, zip_info
 
-    def get_config(self) -> Dict[str, Any]:
+    def get_config(self) -> dict[str, Any]:
         """Get object describing shard-writing configuration.
 
         Returns:
@@ -241,7 +245,7 @@ class Writer(ABC):
         """Flush cached samples to storage, creating a new shard."""
         raise NotImplementedError
 
-    def write(self, sample: Dict[str, Any]) -> None:
+    def write(self, sample: dict[str, Any]) -> None:
         """Write a sample.
 
         May flush an entire new shard, then caches the sample.
@@ -268,11 +272,6 @@ class Writer(ABC):
         """Write the index, having written all the shards."""
         if self.new_samples:
             raise RuntimeError('Internal error: not all samples have been written.')
-        if self.event.is_set():
-            # Shutdown the executor and cancel all the pending futures due to exception in one of
-            # the threads.
-            self.cancel_future_jobs()
-            return
         basename = get_index_basename()
         filename = os.path.join(self.local, basename)
         obj = {
@@ -294,21 +293,30 @@ class Writer(ABC):
 
     def finish(self) -> None:
         """Finish writing samples."""
-        if self.new_samples:
-            self.flush_shard()
-            self._reset_cache()
-        self._write_index()
-        logger.debug(f'Waiting for all shard files to get uploaded to {self.remote}')
-        self.executor.shutdown(wait=True)
+        if self.event.is_set():
+            # If an error occurred, cancel any outstanding uploads
+            self.cancel_future_jobs()
+        else:
+            # Otherwise finish any remaining uploads and write index, and wait for completion
+            if self.new_samples:
+                self.flush_shard()
+                self._reset_cache()
+            self._write_index()
+            logger.debug(f'Waiting for all shard files to get uploaded to {self.remote}')
+            self.executor.shutdown(wait=True)
+
         if self.remote and not self.keep_local:
             shutil.rmtree(self.local, ignore_errors=True)
+
+        # Final check, in case error occurred in an upload during shutdown
+        if self.event.is_set():
+            raise Exception('One of the threads failed. Check other traceback for more ' +
+                            'details.')
 
     def cancel_future_jobs(self) -> None:
         """Shutting down the executor and cancel all the pending jobs."""
         # Beginning python v3.9, ThreadPoolExecutor.shutdown() has a new parameter `cancel_futures`
         self.executor.shutdown(wait=False, cancel_futures=True)
-        if self.remote and not self.keep_local:
-            shutil.rmtree(self.local, ignore_errors=True)
 
     def exception_callback(self, future: Future) -> None:
         """Raise an exception to the caller if exception generated by one of an async thread.
@@ -326,8 +334,9 @@ class Writer(ABC):
         if exception:
             # Set the event to let other pool thread know about the exception
             self.event.set()
-            # re-raise the same exception
-            raise exception
+            # log exception; raising does not propagate to caller as this is called
+            # from Future thread and would just be logged as an unexpected error
+            logger.error(f'Exception in writer thread: {exception}')
 
     def __enter__(self) -> Self:
         """Enter context manager.
@@ -337,7 +346,7 @@ class Writer(ABC):
         """
         return self
 
-    def __exit__(self, exc_type: Optional[Type[BaseException]], exc: Optional[BaseException],
+    def __exit__(self, exc_type: Optional[type[BaseException]], exc: Optional[BaseException],
                  traceback: Optional[TracebackType]) -> None:
         """Exit context manager.
 
@@ -346,11 +355,6 @@ class Writer(ABC):
             exc (BaseException, optional): Exc.
             traceback (TracebackType, optional): Traceback.
         """
-        if self.event.is_set():
-            # Shutdown the executor and cancel all the pending futures due to exception in one of
-            # the threads.
-            self.cancel_future_jobs()
-            return
         self.finish()
 
 
@@ -391,10 +395,10 @@ class JointWriter(Writer):
 
     def __init__(self,
                  *,
-                 out: Union[str, Tuple[str, str]],
+                 out: Union[str, tuple[str, str]],
                  keep_local: bool = False,
                  compression: Optional[str] = None,
-                 hashes: Optional[List[str]] = None,
+                 hashes: Optional[list[str]] = None,
                  size_limit: Optional[Union[int, str]] = 1 << 26,
                  extra_bytes_per_shard: int = 0,
                  extra_bytes_per_sample: int = 0,
@@ -418,11 +422,6 @@ class JointWriter(Writer):
         raise NotImplementedError
 
     def flush_shard(self) -> None:
-        if self.event.is_set():
-            # Shutdown the executor and cancel all the pending futures due to exception in one of
-            # the threads.
-            self.cancel_future_jobs()
-            return
 
         raw_data_basename, zip_data_basename = self._name_next_shard()
         raw_data = self.encode_joint_shard()
@@ -480,10 +479,10 @@ class SplitWriter(Writer):
 
     def __init__(self,
                  *,
-                 out: Union[str, Tuple[str, str]],
+                 out: Union[str, tuple[str, str]],
                  keep_local: bool = False,
                  compression: Optional[str] = None,
-                 hashes: Optional[List[str]] = None,
+                 hashes: Optional[list[str]] = None,
                  size_limit: Optional[Union[int, str]] = 1 << 26,
                  **kwargs: Any) -> None:
         super().__init__(out=out,
@@ -496,7 +495,7 @@ class SplitWriter(Writer):
                          **kwargs)
 
     @abstractmethod
-    def encode_split_shard(self) -> Tuple[bytes, bytes]:
+    def encode_split_shard(self) -> tuple[bytes, bytes]:
         """Encode a split shard out of the cached samples (data, meta files).
 
         Returns:
@@ -505,11 +504,6 @@ class SplitWriter(Writer):
         raise NotImplementedError
 
     def flush_shard(self) -> None:
-        if self.event.is_set():
-            # Shutdown the executor and cancel all the pending futures due to exception in one of
-            # the threads.
-            self.cancel_future_jobs()
-            return
 
         raw_data_basename, zip_data_basename = self._name_next_shard()
         raw_meta_basename, zip_meta_basename = self._name_next_shard('meta')

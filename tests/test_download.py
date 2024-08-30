@@ -3,7 +3,7 @@
 
 import os
 import tempfile
-from typing import Any, Tuple
+from typing import Any
 from unittest.mock import Mock, patch
 
 import boto3
@@ -14,7 +14,8 @@ from streaming.base.storage.download import (download_file, download_from_azure,
                                              download_from_azure_datalake,
                                              download_from_databricks_unity_catalog,
                                              download_from_dbfs, download_from_gcs,
-                                             download_from_local, download_from_s3)
+                                             download_from_hf, download_from_local,
+                                             download_from_s3)
 from tests.conftest import GCS_URL, MY_BUCKET, R2_URL
 
 MY_PREFIX = 'train'
@@ -24,7 +25,7 @@ MY_PREFIX = 'train'
 def remote_local_file() -> Any:
     """Creates a temporary directory and then deletes it when the calling function is done."""
 
-    def _method(cloud_prefix: str = '', filename: str = 'file.txt') -> Tuple[str, str]:
+    def _method(cloud_prefix: str = '', filename: str = 'file.txt') -> tuple[str, str]:
         try:
             mock_local_dir = tempfile.TemporaryDirectory()
             mock_local_filepath = os.path.join(mock_local_dir.name, filename)
@@ -45,6 +46,15 @@ class TestAzureClient:
                 cloud_prefix='aaazure://')
             download_from_azure(mock_remote_filepath, mock_local_filepath)
             download_from_azure_datalake(mock_remote_filepath, mock_local_filepath)
+
+
+class TestHFClient:
+
+    @pytest.mark.usefixtures('remote_local_file')
+    def test_invalid_cloud_prefix(self, remote_local_file: Any):
+        with pytest.raises(ValueError):
+            mock_remote_filepath, mock_local_filepath = remote_local_file(cloud_prefix='hf://')
+            download_from_hf(mock_remote_filepath, mock_local_filepath)
 
 
 class TestS3Client:
@@ -179,6 +189,14 @@ class TestDownload:
     @pytest.mark.usefixtures('remote_local_file')
     def test_download_from_gcs_gets_called(self, mocked_requests: Mock, remote_local_file: Any):
         mock_remote_filepath, mock_local_filepath = remote_local_file(cloud_prefix='gs://')
+        download_file(mock_remote_filepath, mock_local_filepath, 60)
+        mocked_requests.assert_called_once()
+        mocked_requests.assert_called_once_with(mock_remote_filepath, mock_local_filepath)
+
+    @patch('streaming.base.storage.download.download_from_hf')
+    @pytest.mark.usefixtures('remote_local_file')
+    def test_download_from_hf_gets_called(self, mocked_requests: Mock, remote_local_file: Any):
+        mock_remote_filepath, mock_local_filepath = remote_local_file(cloud_prefix='hf://')
         download_file(mock_remote_filepath, mock_local_filepath, 60)
         mocked_requests.assert_called_once()
         mocked_requests.assert_called_once_with(mock_remote_filepath, mock_local_filepath)

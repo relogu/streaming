@@ -10,7 +10,7 @@ prevent shared resources like shared memory from colliding.
 from collections import Counter
 import os
 from time import sleep
-from typing import Iterator, List, Tuple, Union
+from typing import Iterator, Union
 
 import numpy as np
 from torch import distributed as dist
@@ -47,7 +47,7 @@ def _get_path(prefix_int: int, name: str) -> str:
     return f'{run_id}_{prefix_int:06}_{name}'
 
 
-def _pack_locals(dirnames: List[str], prefix_int: int) -> bytes:
+def _pack_locals(dirnames: list[str], prefix_int: int) -> bytes:
     """Pack local dirnames and prefix int.
 
     Args:
@@ -63,7 +63,7 @@ def _pack_locals(dirnames: List[str], prefix_int: int) -> bytes:
     return b''.join([np.int32(size).tobytes(), data])
 
 
-def _unpack_locals(data: bytes) -> Tuple[List[str], int]:
+def _unpack_locals(data: bytes) -> tuple[list[str], int]:
     """Unpack local dirnames and prefix int.
 
     Args:
@@ -78,7 +78,7 @@ def _unpack_locals(data: bytes) -> Tuple[List[str], int]:
     return text[:-1], int(text[-1] or 0)
 
 
-def _check_self(streams_local: List[str]) -> None:
+def _check_self(streams_local: list[str]) -> None:
     """Check our local working directories for overlap.
 
     Args:
@@ -94,7 +94,7 @@ def _check_self(streams_local: List[str]) -> None:
             f'Reused local directory: {duplicate_local_dirs}. Provide a different one.')
 
 
-def _check_and_find(streams_local: List[str], streams_remote: List[Union[str, None]]) -> int:
+def _check_and_find(streams_local: list[str], streams_remote: list[Union[str, None]]) -> int:
     """Find the next available prefix while checking existing local dirs for overlap.
 
     Local leader walks the existing shm prefixes starting from zero, verifying that there is no
@@ -121,7 +121,7 @@ def _check_and_find(streams_local: List[str], streams_remote: List[Union[str, No
         if any(streams_remote):
             # Get the indices of the local directories which matches with the current
             # shared memory.
-            matching_index = np.where(np.in1d(streams_local, their_locals))[0]
+            matching_index = np.where(np.isin(streams_local, their_locals))[0]
             if matching_index.size > 0:
                 for idx in matching_index:
                     # If there is a conflicting local directory for a non-None remote directory,
@@ -137,7 +137,7 @@ def _check_and_find(streams_local: List[str], streams_remote: List[Union[str, No
     return prefix_int
 
 
-def _check_and_find_retrying(streams_local: List[str], streams_remote: List[Union[str, None]],
+def _check_and_find_retrying(streams_local: list[str], streams_remote: list[Union[str, None]],
                              retry: int) -> int:
     """Find the next available prefix while checking existing dirs for overlap.
 
@@ -165,10 +165,10 @@ def _check_and_find_retrying(streams_local: List[str], streams_remote: List[Unio
     raise errs[-1]
 
 
-def get_shm_prefix(streams_local: List[str],
-                   streams_remote: List[Union[str, None]],
+def get_shm_prefix(streams_local: list[str],
+                   streams_remote: list[Union[str, None]],
                    world: World,
-                   retry: int = 100) -> Tuple[int, SharedMemory]:
+                   retry: int = 100) -> tuple[int, SharedMemory]:
     """Register or lookup our shared memory prefix.
 
     Args:

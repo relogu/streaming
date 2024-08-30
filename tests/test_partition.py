@@ -38,6 +38,68 @@ def test_partition_walk(partition_algo: str):
         assert x.shape == (22, 8, 8, 1, 10)
 
 
+@pytest.mark.parametrize('num_samples', [405, 812, 1111])
+@pytest.mark.parametrize('num_canonical_nodes', [1, 2])
+@pytest.mark.parametrize('num_physical_nodes', [2, 8])
+@pytest.mark.parametrize('ranks_per_node', [1, 8])
+@pytest.mark.parametrize('workers_per_rank', [1, 8])
+@pytest.mark.parametrize('batch_size', [4])
+@pytest.mark.parametrize('partition_algo', ['orig', 'relaxed'])
+def test_partition_drop_all(
+    num_samples: int,
+    num_canonical_nodes: int,
+    num_physical_nodes: int,
+    ranks_per_node: int,
+    workers_per_rank: int,
+    batch_size: int,
+    partition_algo: str,
+):
+    initial_physical_nodes = None
+    if partition_algo == 'relaxed' and num_canonical_nodes == 4 and ranks_per_node == 8:
+        num_canonical_nodes = 3
+        initial_physical_nodes = 3
+        batch_size = batch_size * 3
+        num_samples = 3 * num_samples
+
+    # Partitioning should repeat samples so that the epoch size is divisible by the world size.
+    # To drop all samples, we need to drop all repeated samples as well.
+    world_size = num_physical_nodes * ranks_per_node
+    num_repeated_samples = world_size - (num_samples % world_size)
+    drop_first = num_samples + num_repeated_samples
+
+    x = get_partitions(partition_algo, num_samples, num_canonical_nodes, num_physical_nodes,
+                       ranks_per_node, workers_per_rank, batch_size, drop_first,
+                       initial_physical_nodes)
+    # Partition should still have the appropriate shape, but without any samples in it.
+    assert x.shape == (num_physical_nodes, ranks_per_node, workers_per_rank, 0, batch_size)
+    assert x.size == 0
+
+
+@pytest.mark.parametrize('num_samples', [400, 1000])
+@pytest.mark.parametrize('drop_additional', [1, 400])
+@pytest.mark.parametrize('num_canonical_nodes', [4])
+@pytest.mark.parametrize('num_physical_nodes', [4])
+@pytest.mark.parametrize('ranks_per_node', [8])
+@pytest.mark.parametrize('workers_per_rank', [8])
+@pytest.mark.parametrize('batch_size', [4])
+@pytest.mark.parametrize('partition_algo', ['orig', 'relaxed'])
+def test_partition_invalid_drop_first(num_samples: int, drop_additional: int,
+                                      num_canonical_nodes: int, num_physical_nodes: int,
+                                      ranks_per_node: int, workers_per_rank: int, batch_size: int,
+                                      partition_algo: str):
+
+    # Partitioning should repeat samples so that the epoch size is divisible by the world size.
+    # For `drop_first` to be invalid, we need to exceed the number of unique samples plus the
+    # number of repeated samples.
+    world_size = num_physical_nodes * ranks_per_node
+    num_repeated_samples = world_size - (num_samples % world_size)
+    drop_first = num_samples + num_repeated_samples + drop_additional
+
+    with pytest.raises(ValueError, match=f'Resuming further into the dataset*'):
+        _ = get_partitions(partition_algo, num_samples, num_canonical_nodes, num_physical_nodes,
+                           ranks_per_node, workers_per_rank, batch_size, drop_first)
+
+
 @pytest.mark.parametrize('num_samples', [1, 4])
 @pytest.mark.parametrize('num_canonical_nodes', [1, 4])
 @pytest.mark.parametrize('num_physical_nodes', [1, 4])
@@ -225,17 +287,21 @@ def test_partition_nodrop_norepeat(physical_nodes: int, canonical_nodes: int, ra
     assert samples_seen_set == set(range(num_samples))
 
 
-@pytest.mark.parametrize('physical_nodes', [1, 4])
+@pytest.mark.parametrize('physical_nodes', [1, 4, 7, 13])
 @pytest.mark.parametrize('canonical_nodes', [12, 4, 64])
 @pytest.mark.parametrize('ranks_per_node', [8])
 @pytest.mark.parametrize('workers_per_rank', [1, 8])
 @pytest.mark.parametrize('batch_size', [2, 8])
 @pytest.mark.parametrize('num_samples', [1024, 16384])
 @pytest.mark.parametrize('sample_in_epoch', [0, 256])
-@pytest.mark.parametrize('replication', [2, 4])
+@pytest.mark.parametrize('replication', [2, 4, 8])
 def test_replication_samples(physical_nodes: int, canonical_nodes: int, ranks_per_node: int,
                              workers_per_rank: int, batch_size: int, num_samples: int,
                              sample_in_epoch: int, replication: int):
+
+    # Make sure canonical nodes works with physical nodes
+    if physical_nodes % canonical_nodes != 0 and canonical_nodes % physical_nodes != 0:
+        canonical_nodes = physical_nodes
 
     # Create a World object reflecting the hardware -- the actual nodes and rank
     actual_world = World(physical_nodes, ranks_per_node, workers_per_rank, 0)

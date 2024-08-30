@@ -8,7 +8,7 @@ import pathlib
 import shutil
 import urllib.parse
 from time import sleep, time
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from streaming.base.util import get_import_exception_message
 
@@ -19,6 +19,7 @@ __all__ = [
     'download_from_oci',
     'download_from_azure',
     'download_from_azure_datalake',
+    'download_from_hf',
     'download_from_databricks_unity_catalog',
     'download_from_dbfs',
     'download_from_alipan',
@@ -44,7 +45,7 @@ def download_from_s3(remote: str, local: str, timeout: float) -> None:
     """
 
     def _download_file(unsigned: bool = False,
-                       extra_args: Optional[Dict[str, Any]] = None) -> None:
+                       extra_args: Optional[dict[str, Any]] = None) -> None:
         """Download the file from AWS S3 bucket. The bucket can be either public or private.
 
         Args:
@@ -53,12 +54,15 @@ def download_from_s3(remote: str, local: str, timeout: float) -> None:
             extra_args (Dict[str, Any], optional): Extra arguments supported by boto3.
                 Defaults to ``None``.
         """
+        retries = {
+            'mode': 'adaptive',
+        }
         if unsigned:
             # Client will be using unsigned mode in which public
             # resources can be accessed without credentials
-            config = Config(read_timeout=timeout, signature_version=UNSIGNED)
+            config = Config(read_timeout=timeout, signature_version=UNSIGNED, retries=retries)
         else:
-            config = Config(read_timeout=timeout)
+            config = Config(read_timeout=timeout, retries=retries)
 
         if extra_args is None:
             extra_args = {}
@@ -272,6 +276,30 @@ def download_from_oci(remote: str, local: str) -> None:
     os.rename(local_tmp, local)
 
 
+def download_from_hf(remote: str, local: str) -> None:
+    """Download a file from remote Hugging Face to local.
+
+    Args:
+        remote (str): Remote path (Hugging Face).
+        local (str): Local path (local filesystem).
+    """
+    from huggingface_hub import hf_hub_download
+
+    obj = urllib.parse.urlparse(remote)
+    if obj.scheme != 'hf':
+        raise ValueError(f'Expected remote path to start with `hf://`, got {remote}.')
+
+    _, _, _, repo_org, repo_name, path = remote.split('/', 5)
+    local_dirname = os.path.dirname(local)
+    hf_hub_download(repo_id=f'{repo_org}/{repo_name}',
+                    filename=path,
+                    repo_type='dataset',
+                    local_dir=local_dirname)
+
+    downloaded_name = os.path.join(local_dirname, path)
+    os.rename(downloaded_name, local)
+
+
 def download_from_azure(remote: str, local: str) -> None:
     """Download a file from remote Microsoft Azure to local.
 
@@ -292,7 +320,10 @@ def download_from_azure(remote: str, local: str) -> None:
         account_url=f"https://{os.environ['AZURE_ACCOUNT_NAME']}.blob.core.windows.net",
         credential=os.environ['AZURE_ACCOUNT_ACCESS_KEY'])
     try:
-        blob_client = service.get_blob_client(container=obj.netloc, blob=obj.path.lstrip('/'))
+        file_path = obj.path.lstrip('/').split('/')
+        container_name = file_path[0]
+        blob_name = os.path.join(*file_path[1:])
+        blob_client = service.get_blob_client(container=container_name, blob=blob_name)
         local_tmp = local + '.tmp'
         with open(local_tmp, 'wb') as my_blob:
             blob_data = blob_client.download_blob()
@@ -378,7 +409,7 @@ def download_from_databricks_unity_catalog(remote: str, local: str) -> None:
                       f'operations. Increase the `download_retry` value to retry downloading ' +
                       f'a file.',)
         if e.error_code == 'NOT_FOUND':
-            raise FileNotFoundError(f'Object dbfs:{remote} not found.') from e
+            raise FileNotFoundError(f'Object {remote} not found.') from e
         raise e
     os.rename(local_tmp, local)
 
@@ -511,6 +542,8 @@ def download_file(remote: Optional[str], local: str, timeout: float):
         download_from_gcs(remote, local)
     elif remote.startswith('oci://'):
         download_from_oci(remote, local)
+    elif remote.startswith('hf://'):
+        download_from_hf(remote, local)
     elif remote.startswith('azure://'):
         download_from_azure(remote, local)
     elif remote.startswith('azure-dl://'):

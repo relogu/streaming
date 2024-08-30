@@ -3,7 +3,7 @@
 
 """Ingest yaml and create SimulationDataset."""
 
-from typing import Optional, Tuple
+from typing import Optional
 
 from core.sim_dataset import SimulationDataset
 from core.sim_time import Time, TimeUnit, ensure_time
@@ -14,7 +14,7 @@ from streaming.base import Stream
 
 
 def ingest_yaml(yaml_dict: Optional[dict] = None,
-                filepath: Optional[str] = None) -> Tuple[Optional[int], int, Time, int, dict]:
+                filepath: Optional[str] = None) -> tuple[Optional[int], int, Time, int, dict]:
     """Create SimulationDataset from yaml file and other needed args.
 
     Args:

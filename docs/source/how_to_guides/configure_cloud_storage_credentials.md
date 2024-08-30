@@ -7,14 +7,15 @@ Streaming dataset supports the following cloud storage providers to stream your 
 - [Oracle Cloud Storage](#oracle-cloud-storage)
 - [Azure Blob Storage](#azure-blob-storage-and-azure-datalake)
 - [Databricks](#databricks)
+- [Huggingface Datasets](#huggingface-datasets)
 
 ## Amazon S3
 
 For an S3 bucket with public access, no additional setup is required, simply specify the S3 URI of the resource.
 
-### MosaicML platform
+### Mosaic AI Training
 
-For [MosaicML platform](https://docs.mosaicml.com/projects/mcli/en/latest/) users, follow the steps mentioned in the [AWS S3](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/s3.html) MCLI documentation page on how to configure the cloud provider credentials.
+For [Mosaic AI Training](https://docs.mosaicml.com/projects/mcli/en/latest/) users, follow the steps mentioned in the [AWS S3](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/s3.html) MCLI documentation page on how to configure the cloud provider credentials.
 
 ### Others
 
@@ -137,9 +138,9 @@ Note that even with S3 compatible object stores, URLs should be of the form `s3:
 
 ## Google Cloud Storage
 
-### MosaicML platform
+### Mosaic AI Training
 
-For [MosaicML platform](https://docs.mosaicml.com/projects/mcli/en/latest/) users, follow the steps mentioned in the [Google Cloud Storage](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/gcp.html) MCLI documentation page on how to configure the cloud provider credentials.
+For [Mosaic AI Training](https://docs.mosaicml.com/projects/mcli/en/latest/) users, follow the steps mentioned in the [Google Cloud Storage](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/gcp.html) MCLI documentation page on how to configure the cloud provider credentials.
 
 
 ### GCP User Auth Credentials Mounted as Environment Variables
@@ -191,9 +192,9 @@ export GOOGLE_APPLICATION_CREDENTIALS='KEY_FILE'
 
 ## Oracle Cloud Storage
 
-### MosaicML platform
+### Mosaic AI Training
 
-For [MosaicML platform](https://docs.mosaicml.com/projects/mcli/en/latest/) users, follow the steps mentioned in the [Oracle Cloud Storage](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/oci.html) MCLI documentation page on how to configure the cloud provider credentials.
+For [Mosaic AI Training](https://docs.mosaicml.com/projects/mcli/en/latest/) users, follow the steps mentioned in the [Oracle Cloud Storage](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/oci.html) MCLI documentation page on how to configure the cloud provider credentials.
 
 ### Others
 
@@ -251,15 +252,32 @@ export AZURE_ACCOUNT_ACCESS_KEY='NN1KHxKKkj20ZO92EMiDQjx3wp2kZG4UUvfAGlgGWRn6sPR
 ```
 ````
 
+## Huggingface Datasets
+
+To authenticate Huggingface Hub access, users must set their HuggingFace token ([HF_TOKEN](https://huggingface.co/docs/huggingface_hub/main/en/package_reference/environment_variables#hftoken)) in the run environment. See the [HF's documentation](https://huggingface.co/docs/huggingface_hub/guides/hf_file_system) on the URL format.
+
+Set the Huggingface token in the run environment as shown below
+
+````{tabs}
+```{code-tab} py
+import os
+os.environ['HF_TOKEN'] = 'EXAMPLEFODNN7EXAMPLE'
+```
+
+```{code-tab} sh
+export HF_TOKEN='EXAMPLEFODNN7EXAMPLE'
+```
+````
+
 ## Databricks
 
 To authenticate Databricks access for both Unity Catalog and Databricks File System (DBFS), users must set their Databricks host (`DATABRICKS_HOST`) and access token (`DATABRICKS_TOKEN`) in the run environment.
 
 See the [Databricks documentation](https://docs.databricks.com/en/dev-tools/auth.html#databricks-personal-access-token-authentication) for instructions on how to create a personal access token.
 
-### MosaicML platform
+### Mosaic AI Training
 
-For [MosaicML platform](https://docs.mosaicml.com/projects/mcli/en/latest/) users, follow the steps mentioned in the [Databricks](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/databricks.html) MCLI documentation page on how to configure the credentials.
+For [Mosaic AI Training](https://docs.mosaicml.com/projects/mcli/en/latest/) users, follow the steps mentioned in the [Databricks](https://docs.mosaicml.com/projects/mcli/en/latest/resources/secrets/databricks.html) MCLI documentation page on how to configure the credentials.
 
 ### Others
 
