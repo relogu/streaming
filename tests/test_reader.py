@@ -208,7 +208,7 @@ def _validate_sample(index: Union[int, slice, list[int], NDArray[np.int64]],
     elif isinstance(index, list):
         for i, sample_idx in enumerate(index):
             validate_single_sample(sample_idx, output_sample[i], total_samples)
-    elif isinstance(index, slice):
+    elif isinstance(index, slice):  # type: ignore[reportUnnecessaryIsInstance]
         indices = range(index.start, index.stop, index.step)
         for i, sample_idx in enumerate(indices):
             validate_single_sample(sample_idx, output_sample[i], total_samples)

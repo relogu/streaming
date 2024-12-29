@@ -13,6 +13,7 @@ from streaming.base.constant import TICK
 
 shared_memory_list: list['SharedMemory'] = []
 
+
 class SharedMemory:
     """Improved quiet implementation of shared memory.
 

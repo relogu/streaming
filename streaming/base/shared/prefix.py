@@ -7,8 +7,8 @@ The prefix is used by all workers using this StreamingDataset of this training j
 prevent shared resources like shared memory from colliding.
 """
 
-from collections import Counter
 import os
+from collections import Counter
 from time import sleep
 from typing import Iterator, Union
 
@@ -123,7 +123,7 @@ def _check_and_find(streams_local: list[str], streams_remote: list[Union[str, No
             # shared memory.
             matching_index = np.where(np.isin(streams_local, their_locals))[0]
             if matching_index.size > 0:
-                for idx in matching_index:
+                for idx in matching_index:  # type: ignore[reportGeneralTypeIssues]
                     # If there is a conflicting local directory for a non-None remote directory,
                     # raise an exception.
                     if streams_remote[idx] is not None:

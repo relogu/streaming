@@ -100,7 +100,7 @@ def get_shuffle_py1s(shard_sizes: NDArray[np.int64],
     # Create each shard's sample ID span (begin, end excl).
     spans = []
     num_samples = 0
-    for shard_size in shard_sizes:
+    for shard_size in shard_sizes:  # type: ignore[reportGeneralTypeIssues]
         span = num_samples, num_samples + shard_size
         spans.append(span)
         num_samples += shard_size

@@ -114,7 +114,8 @@ class MDSReader(JointReader):
             if size:
                 sizes.append(size)
             else:
-                size, = np.frombuffer(data[idx:idx + 4], np.uint32)
+                size, = np.frombuffer(data[idx:idx + 4],
+                                      np.uint32)  # type: ignore[reportGeneralTypeIssues]
                 sizes.append(size)
                 idx += 4
         sample = {}
@@ -138,7 +139,7 @@ class MDSReader(JointReader):
         with open(filename, 'rb', 0) as fp:
             fp.seek(offset)
             pair = fp.read(8)
-            begin, end = np.frombuffer(pair, np.uint32)
+            begin, end = np.frombuffer(pair, np.uint32)  # type: ignore[reportGeneralTypeIssues]
             fp.seek(begin)
             data = fp.read(end - begin)
         if not data:

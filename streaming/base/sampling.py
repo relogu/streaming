@@ -57,7 +57,8 @@ def get_sampling(samples_per_shard: NDArray[np.int64], choose: int, granularity:
     pick_samples_per_shard = np.full(num_shards, granularity)
     samples_per_pick = np.repeat(pick_samples_per_shard, picks_per_shard)
     shard_last_pick_indices = np.cumsum(picks_per_shard) - 1
-    shard_last_pick_sizes = samples_per_shard - (picks_per_shard - 1) * granularity
+    shard_last_pick_sizes = samples_per_shard - (
+        picks_per_shard - 1) * granularity  # type: ignore[reportGeneralTypeIssues]
     samples_per_pick[shard_last_pick_indices] = shard_last_pick_sizes
 
     # Deterministically shuffle the picks.
@@ -68,7 +69,7 @@ def get_sampling(samples_per_shard: NDArray[np.int64], choose: int, granularity:
     # Add up the picks until we have enough chosen samples to get choose per shard.
     choose_per_shard = samples_per_shard * (choose // num_samples)
     choose %= num_samples
-    for pick_id in pick_ordering:
+    for pick_id in pick_ordering:  # type: ignore[reportGeneralTypeIssues]
         shard_id = pick_shard_ids[pick_id]
         num_picked = int(samples_per_pick[pick_id])
         num_picked = min(choose, num_picked)
