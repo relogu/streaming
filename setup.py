@@ -68,16 +68,16 @@ extra_deps['dev'] = [
     'docformatter>=1.4',
     'jupyter==1.1.1',
     'pre-commit>=2.18.1,<4',
-    'pytest==8.3.3',
+    'pytest==8.3.4',
     'pytest_codeblocks==0.17.0',
-    'pytest-cov>=4,<6',
+    'pytest-cov>=4,<7',
     'toml==0.10.2',
     'yamllint==1.35.1',
     'moto>=4.0,<6',
-    'fastapi==0.114.2',
-    'pydantic==2.9.1',
-    'uvicorn==0.30.6',
-    'pytest-split==0.9.0',
+    'fastapi==0.115.5',
+    'pydantic==2.10.2',
+    'uvicorn==0.32.1',
+    'pytest-split==0.10.0',
 ]
 
 extra_deps['docs'] = [
@@ -124,7 +124,7 @@ extra_deps['alipan'] = [
 ]
 
 extra_deps['hf'] = [
-    'huggingface_hub>=0.23.4,<0.25',
+    'huggingface_hub>=0.23.4,<0.27',
 ]
 
 extra_deps['testing'] = [

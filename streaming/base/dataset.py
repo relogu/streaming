@@ -26,7 +26,7 @@ from torch.utils.data import IterableDataset
 from streaming.base.array import Array
 from streaming.base.batching import generate_work
 from streaming.base.constant import (BARRIER, BARRIER_FILELOCK, CACHE_FILELOCK, CACHE_USAGE,
-                                     EPOCH_DATA, EPOCH_SHAPE, NEXT_EPOCH, RESUME,
+                                     DEFAULT_TIMEOUT, EPOCH_DATA, EPOCH_SHAPE, NEXT_EPOCH, RESUME,
                                      SHARD_ACCESS_TIMES, SHARD_STATES, TICK)
 from streaming.base.distributed import maybe_init_dist
 from streaming.base.format import get_index_basename
@@ -53,9 +53,11 @@ class _ShardState(IntEnum):
     """
     INVALID = 0  # The state is allocated (e.g., in an array), but not initialized yet.
     REMOTE = 1  # The shard exists only at the remote source.
-    PREPARING = 2  # The shard is currently being worked on: (a) downloading from remote to local,
+    # The shard is currently being worked on: (a) downloading from remote to local,
+    PREPARING = 2
     # (b) decompressing zip-only, etc.
-    LOCAL = 3  # Some form of the shard (raw or zip) exists locally (as well as remotely).
+    # Some form of the shard (raw or zip) exists locally (as well as remotely).
+    LOCAL = 3
 
 
 class _IterState(IntEnum):
@@ -65,7 +67,8 @@ class _IterState(IntEnum):
     - State transitions: ITERATING -> EXITING -> EXITED.
     """
     ITERATING = 0  # We are currently iterating through an epoch.
-    EXITING = 1  # We have been signalled to end the epoch (either we hit end of __iter__, or
+    # We have been signalled to end the epoch (either we hit end of __iter__, or
+    EXITING = 1
     # someone else started a new epoch, of which only one can be valid at a time).
     EXITED = 2  # All threads have noticed the exit signal and exited.
 
@@ -314,7 +317,7 @@ class StreamingDataset(Array, IterableDataset):
                  local: Optional[str] = None,
                  split: Optional[str] = None,
                  download_retry: int = 2,
-                 download_timeout: float = 60,
+                 download_timeout: float = DEFAULT_TIMEOUT,
                  validate_hash: Optional[str] = None,
                  keep_zip: bool = False,
                  epoch_size: Optional[Union[int, str]] = None,
@@ -378,10 +381,8 @@ class StreamingDataset(Array, IterableDataset):
 
         # Check sampling method is one of "balanced" or "fixed".
         if self.sampling_method not in ['balanced', 'fixed']:
-            raise ValueError(
-                f'Invalid sampling method: {sampling_method}. ' + \
-                f'Must be one of `balanced` or `fixed`.'
-            )
+            raise ValueError(f'Invalid sampling method: {sampling_method}. ' +
+                             f'Must be one of `balanced` or `fixed`.')
 
         # Check sampling granularity.
         if self.sampling_granularity <= 0:
@@ -391,16 +392,8 @@ class StreamingDataset(Array, IterableDataset):
         # Check batching method is one of "random", "stratified", "per_stream", or "device_per_stream".
         if self.batching_method not in ['random', 'stratified', 'per_stream', 'device_per_stream']:
             raise ValueError(
-                f'Invalid batching method: {batching_method}. ' + \
-                f'Must be one of `random`, `stratified`, `per_stream`, or `device_per_stream`.'
-            )
-
-        # issue deprecation warning for py1b shuffle algorithm.
-        if self.shuffle_algo == 'py1b':
-            warnings.warn('The \'py1b\' shuffle algorithm will soon be deprecated. \
-                Please use the more performant \'py1br\' algorithm instead.',
-                          DeprecationWarning,
-                          stacklevel=2)
+                f'Invalid batching method: {batching_method}. ' +
+                f'Must be one of `random`, `stratified`, `per_stream`, or `device_per_stream`.')
 
         # Check shuffle seed.
         if self.shuffle_seed < 0:
@@ -409,15 +402,13 @@ class StreamingDataset(Array, IterableDataset):
 
         # Check that predownload is at least per device batch size, and set it if currently `None`.
         if self.predownload is not None and self.batch_size is not None and \
-            self.predownload < self.batch_size:
+                self.predownload < self.batch_size:
             warnings.warn(f'predownload < batch_size ({self.predownload} < {self.batch_size}).' +
                           f'This may result in slower batch time. Recommendation is to set ' +
                           f'predownload to at-least batch_size.')
         elif self.predownload is None:
-            logger.warning(f'Because `predownload` was not specified, it will default to ' +
-                           f'8*batch_size if batch_size is not None, otherwise 64. Prior to ' +
-                           f'Streaming v0.7.0, `predownload` defaulted to ' +
-                           f'max(batch_size, 256 * batch_size // num_canonical_nodes).')
+            logger.info(f'Because `predownload` was not specified, it will default to ' +
+                        f'8*batch_size if batch_size is not None, otherwise 64.')
             self.predownload = 8 * self.batch_size if self.batch_size is not None else 64
 
         # Convert epoch size from string to int, if needed. Cannot be negative.
@@ -529,7 +520,7 @@ class StreamingDataset(Array, IterableDataset):
         ]
         self._shm_prefix_int, self._locals_shm = get_shm_prefix(streams_local, streams_remote,
                                                                 self._unique_rank_world)
-        self._filelock_root = os.path.join(gettempdir(), 'streaming')
+        self._filelock_root = gettempdir()
         os.makedirs(self._filelock_root, exist_ok=True)
 
         # Create the shared memory-backed barrier, without its lock, which is unpickleable.
@@ -603,7 +594,8 @@ class StreamingDataset(Array, IterableDataset):
         self._executor: ThreadPoolExecutor
         self._event: Event
 
-        del self._shared_barrier.lock  # Remote the lock that makes it unpickleable.
+        # Remote the lock that makes it unpickleable.
+        del self._shared_barrier.lock
 
     def __del__(self) -> None:
         """Destructor, which releases its local working directories."""
@@ -670,10 +662,9 @@ class StreamingDataset(Array, IterableDataset):
         """Set the shuffle block size value."""
         if self.shuffle_block_size is None:
             if not world.worker_of_rank:
-                logger.warning(f'Because `shuffle_block_size` was not specified, it will ' +
-                               f'default to max(4_000_000 // num_canonical_nodes, 1 << 18) if ' +
-                               f'num_canonical_nodes is not None, otherwise 262144. Prior to ' +
-                               f'Streaming v0.7.0, `shuffle_block_size` defaulted to 262144.')
+                logger.info(f'Because `shuffle_block_size` was not specified, it will ' +
+                            f'default to max(4_000_000 // num_canonical_nodes, 1 << 18) if ' +
+                            f'num_canonical_nodes is not None, otherwise 262144.')
             self.shuffle_block_size = max(4_000_000 // self.num_canonical_nodes, 1 << 18) \
                 if self.num_canonical_nodes is not None else 1 << 18
 
@@ -698,12 +689,9 @@ class StreamingDataset(Array, IterableDataset):
                     self.num_canonical_nodes = 64 * world.num_nodes
                 else:
                     if not world.worker_of_rank:
-                        logger.warning(
-                            f'Because `num_canonical_nodes` was not specified, and ' +
-                            f'`shuffle_algo` is {self.shuffle_algo}, it will default to ' +
-                            f'be equal to physical nodes. Prior to Streaming ' +
-                            f'v0.7.0, `num_canonical_nodes` defaulted to 64 * physical ' +
-                            f'nodes.')
+                        logger.info(f'Because `num_canonical_nodes` was not specified, and ' +
+                                    f'`shuffle_algo` is {self.shuffle_algo}, it will default to ' +
+                                    f'be equal to physical nodes.')
                     self.num_canonical_nodes = world.num_nodes
             self._set_shuffle_block_size(world)
             return epoch, 0
@@ -724,9 +712,7 @@ class StreamingDataset(Array, IterableDataset):
                         logger.warning(
                             f'Because `num_canonical_nodes` was not specified, and ' +
                             f'`shuffle_algo` is {self.shuffle_algo}, it will default to ' +
-                            f'be equal to physical nodes. Prior to Streaming ' +
-                            f'v0.7.0, `num_canonical_nodes` defaulted to 64 * physical ' +
-                            f'nodes.')
+                            f'be equal to physical nodes.')
                     self.num_canonical_nodes = world.num_nodes
             self._set_shuffle_block_size(world)
             return epoch, 0
@@ -878,7 +864,8 @@ class StreamingDataset(Array, IterableDataset):
             # stream's shard offset in list of all shards from all streams
             stream_shard_offset = self.shard_offset_per_stream[stream_id]
             num_stream_shards = self.shards_per_stream[stream_id]
-            stream_shard_ids = stream_shard_offset + np.arange(num_stream_shards)
+            stream_shard_ids = stream_shard_offset + \
+                np.arange(num_stream_shards)
 
             # Calculate choose per stream shard.
             samples_per_stream_shard = self.samples_per_shard[stream_shard_ids]
@@ -900,7 +887,8 @@ class StreamingDataset(Array, IterableDataset):
                 # shard_choose will be 10, and shard_shuffle_units will be [4, 4, 2]. If
                 # downsampling that same shard by 0.5x, shard_choose will be 2 and
                 # shard_shuffle_units will be just [2].
-                shard_shuffle_units = [shard_samples] * (shard_choose // shard_samples)
+                shard_shuffle_units = [shard_samples] * \
+                    (shard_choose // shard_samples)
                 remainder = shard_choose % shard_samples
                 if remainder:
                     shard_shuffle_units.append(remainder)
@@ -910,7 +898,8 @@ class StreamingDataset(Array, IterableDataset):
                 shard_sample_offset = self.sample_offset_per_shard[shard_id]
                 num_full_repeats = shard_choose // shard_samples
                 if num_full_repeats:
-                    full_repeat = shard_sample_offset + np.arange(shard_samples)
+                    full_repeat = shard_sample_offset + \
+                        np.arange(shard_samples)
                     sample_ids += [full_repeat] * num_full_repeats
 
                 # Calculate sample IDs of a possible partial repeat.
@@ -1081,40 +1070,25 @@ class StreamingDataset(Array, IterableDataset):
             raise RuntimeError(f'Negative cache usage: {self.cache_usage}.')
 
     def _evict_coldest_shard(self) -> None:
-        """Evict the coldeset (i.e., least recently accessed) shard.
+        """Evict the coldest (i.e., least recently accessed) local shard.
 
         Assumes you hold ``__cache_filelock``, preventing anyone else from modifying the cache. We
         expect that shard deletions are very fast.
 
         This method is called internally by ``prepare_shard`` to clear space for more downloads.
         """
-        while True:
-            # Find the shard with the oldest last access time.
-            shard_id = int(self._shard_access_times.numpy().argmin())
-
-            # Check the shard's last access time. If it is NEVER, there are no downloaded shards to
-            # evict. If any shards are currently being downloaded, wait, else raise an error.
-            if self._shard_access_times[shard_id] == NEVER:
-                if (self._shard_states.numpy() == _ShardState.PREPARING).any():
-                    sleep(TICK)
-                    continue
-                else:
-                    raise ValueError(
-                        f'Tried to evict a shard {shard_id}, but no shards are present to evict ' +
-                        f'(cache usage {self.cache_usage} of {self.cache_limit})')
-
-            # The shard has a valid timestamp. Now, verify that it is actually present. There is an
-            # edge case where it may not be present (see the note in get_item()). If not present,
-            # pick the next lowest shard.
-            if self._shard_states[shard_id] != _ShardState.LOCAL:
-                self._shard_access_times[shard_id] = NEVER
-                continue
-
-            # Break on success.
-            break
-
+        states = self._shard_states.numpy()
+        access_times = self._shard_access_times.numpy()
+        # Filter shard ids to include only local shards
+        local_shard_ids = np.where(states == _ShardState.LOCAL)[0]
+        if local_shard_ids.size == 0:
+            raise ValueError('Attempted shard eviction, but there are no shards present locally ' +
+                             'to evict. Your cache limit may be too low.')
+        local_shard_times = access_times[local_shard_ids]
+        # Find local shard with oldest last access time
+        coldest_shard_id = local_shard_ids[np.argmin(local_shard_times)]
         # Evict that shard.
-        self._evict_shard(shard_id)
+        self._evict_shard(coldest_shard_id)
 
     def evict_shard(self, shard_id: int) -> None:
         """Evict the given shard.
@@ -1219,14 +1193,19 @@ class StreamingDataset(Array, IterableDataset):
             shard = self.shards[shard_id]
 
             # We may need to decompress the shard (if local dir just contains zips).
-            raw_info, _ = shard.file_pairs[0]  # Each file pair is present in the same way.
-            raw_filename = os.path.join(stream.local, stream.split, raw_info.basename)  # Find raw.
+            # Each file pair is present in the same way.
+            raw_info, _ = shard.file_pairs[0]
+            # Find raw.
+            raw_filename = os.path.join(stream.local, stream.split, raw_info.basename)
             if not os.path.isfile(raw_filename):  # Is raw missing?
-                self._shard_states[shard_id] = _ShardState.PREPARING  # Lock the shard.
+                # Lock the shard.
+                self._shard_states[shard_id] = _ShardState.PREPARING
                 lock.release()  # Unblock other workers.
-                delta = stream.prepare_shard(shard)  # Decompress and remove zip.
+                # Decompress and remove zip.
+                delta = stream.prepare_shard(shard)
                 lock.acquire()  # Briefly take the lock back.
-                self._shard_states[shard_id] = _ShardState.LOCAL  # Restore shard state.
+                # Restore shard state.
+                self._shard_states[shard_id] = _ShardState.LOCAL
                 self.cache_usage += delta  # Update accounting.
             self._shard_access_times[shard_id] = time_ns()  # Touch the shard.
             lock.release()

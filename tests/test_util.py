@@ -8,12 +8,13 @@ import time
 import urllib.parse
 from multiprocessing.shared_memory import SharedMemory as BuiltinSharedMemory
 from typing import Optional, Union
+from unittest.mock import Mock
 
 import pytest
 
 from streaming.base.constant import RESUME
 from streaming.base.shared.prefix import _get_path
-from streaming.base.storage.download import download_file
+from streaming.base.storage.download import CloudDownloader
 from streaming.base.storage.upload import CloudUploader
 from streaming.base.util import (bytes_to_int, clean_stale_shared_memory, get_list_arg,
                                  merge_index, number_abbrev_to_int, retry)
@@ -151,9 +152,9 @@ def integrity_check(out: Union[str, tuple[str, str]],
 
     with tempfile.TemporaryDirectory() as temp_dir:
         if cu.remote:
-            download_file(os.path.join(cu.remote, 'index.json'),
-                          os.path.join(temp_dir, 'index.json'),
-                          timeout=60)
+            CloudDownloader.direct_download(os.path.join(cu.remote, 'index.json'),
+                                            os.path.join(temp_dir, 'index.json'),
+                                            timeout=60)
             if expected_n_shard_files == -1:
                 expected_n_shard_files = get_expected(cu.remote)
             local_merged_index_path = os.path.join(temp_dir, 'index.json')
@@ -215,7 +216,7 @@ def test_merge_index_from_list_local(local_remote_dir: tuple[str, str], keep_loc
     from pyspark.sql import SparkSession
     from pyspark.sql.types import DecimalType, IntegerType, StringType, StructField, StructType
 
-    from streaming.base.converters import dataframeToMDS
+    from streaming.base.converters import dataframe_to_mds
 
     def not_merged_index(index_file_path: str, out: str):
         """Check if index_file_path is the merged index at folder out."""
@@ -236,7 +237,7 @@ def test_merge_index_from_list_local(local_remote_dir: tuple[str, str], keep_loc
             (3, 'Charlie', Decimal('987.65'))]
     df = spark.createDataFrame(data=data, schema=schema).repartition(3)
     mds_kwargs = {'out': mds_out, 'columns': {'id': 'int32', 'name': 'str'}, 'keep_local': True}
-    dataframeToMDS(df, merge_index=False, mds_kwargs=mds_kwargs)
+    dataframe_to_mds(df, merge_index=False, mds_kwargs=mds_kwargs)
 
     local_cu = CloudUploader.get(local, exist_ok=True, keep_local=True)
     local_index_files = [
@@ -282,7 +283,7 @@ def test_merge_index_from_root_local(local_remote_dir: tuple[str, str], n_partit
     from pyspark.sql import SparkSession
     from pyspark.sql.types import DecimalType, IntegerType, StringType, StructField, StructType
 
-    from streaming.base.converters import dataframeToMDS
+    from streaming.base.converters import dataframe_to_mds
 
     out, _ = local_remote_dir
 
@@ -300,7 +301,7 @@ def test_merge_index_from_root_local(local_remote_dir: tuple[str, str], n_partit
 
     mds_kwargs = {'out': out, 'columns': {'id': 'int32', 'name': 'str'}, 'keep_local': keep_local}
 
-    mds_path, _ = dataframeToMDS(df, merge_index=False, mds_kwargs=mds_kwargs)
+    mds_path, _ = dataframe_to_mds(df, merge_index=False, mds_kwargs=mds_kwargs)
     merge_index(mds_path, keep_local=keep_local)
     integrity_check(mds_path, keep_local=keep_local)
 
@@ -309,9 +310,14 @@ def test_merge_index_from_root_local(local_remote_dir: tuple[str, str], n_partit
 def test_retry(with_args: bool):
     num_tries = 0
     return_after = 2
+    clean_up = Mock()
 
     if with_args:
-        decorator = retry(RuntimeError, num_attempts=3, initial_backoff=0.01, max_jitter=0.01)
+        decorator = retry(RuntimeError,
+                          clean_up_fn=clean_up,
+                          num_attempts=3,
+                          initial_backoff=0.01,
+                          max_jitter=0.01)
         return_after = 2
     else:
         decorator = retry
@@ -327,3 +333,6 @@ def test_retry(with_args: bool):
         return "Third time's a charm"
 
     assert flaky_function() == "Third time's a charm"
+
+    if with_args:
+        assert clean_up.call_count == 2
