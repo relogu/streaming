@@ -99,14 +99,14 @@ def get_partitions_orig(num_samples: int,
         # row_starts: (canonical nodes, 1).
         row_starts = np.arange(num_canonical_nodes) * num_samples // num_canonical_nodes
         row_starts = np.expand_dims(row_starts, 1)
-        ids += row_starts - ids[:, :1]
+        ids += row_starts - ids[:, :1]  # pyright: ignore[reportGeneralTypeIssues]
 
         # For short rows (length not evenly divisible), repeat the last ID to get even length.
         #
         # row_stops: (canonical nodes, 1).
         row_stops = np.arange(1, 1 + num_canonical_nodes) * num_samples // num_canonical_nodes
         row_stops = np.expand_dims(row_stops, 1)
-        are_rows_short = row_stops - row_starts < samples_per_canonical_node
+        are_rows_short = row_stops - row_starts < samples_per_canonical_node  # pyright: ignore[reportGeneralTypeIssues]
         ids[:, samples_per_canonical_node - 1:samples_per_canonical_node] -= are_rows_short
 
         # If padding we needed, repeat samples to populate it.

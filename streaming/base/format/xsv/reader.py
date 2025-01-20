@@ -122,7 +122,7 @@ class XSVReader(SplitReader):
         with open(meta_filename, 'rb', 0) as fp:
             fp.seek(offset)
             pair = fp.read(8)
-            begin, end = np.frombuffer(pair, np.uint32)
+            begin, end = np.frombuffer(pair, np.uint32)  # pyright: ignore[reportGeneralTypeIssues]
         data_filename = os.path.join(self.dirname, self.split, self.raw_data.basename)
         with open(data_filename, 'rb', 0) as fp:
             fp.seek(begin)

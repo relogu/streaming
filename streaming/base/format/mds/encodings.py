@@ -455,7 +455,8 @@ class PIL(Encoding):
 
     def decode(self, data: bytes) -> Image.Image:
         idx = 3 * 4
-        width, height, mode_size = np.frombuffer(data[:idx], np.uint32)
+        width, height, mode_size = np.frombuffer(
+            data[:idx], np.uint32)  # pyright: ignore[reportGeneralTypeIssues]
         idx2 = idx + mode_size
         mode = data[idx:idx2].decode('utf-8')
         size = width, height

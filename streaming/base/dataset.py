@@ -510,7 +510,8 @@ class StreamingDataset(Array, IterableDataset):
 
         # Build the shard index (for partitioning and mapping samples to shards).
         self.samples_per_shard = np.array([shard.samples for shard in self.shards], np.int64)
-        self.sample_offset_per_shard = self.samples_per_shard.cumsum() - self.samples_per_shard
+        self.sample_offset_per_shard = self.samples_per_shard.cumsum(
+        ) - self.samples_per_shard  # pyright: ignore[reportGeneralTypeIssues]
         self.spanner = Spanner(self.samples_per_shard)
 
         # Now that we know the number of underlying samples of each stream, derive each stream's

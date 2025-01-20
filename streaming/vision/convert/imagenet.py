@@ -153,7 +153,7 @@ def main(args: Namespace) -> None:
                        hashes=hashes,
                        size_limit=args.size_limit,
                        progress_bar=args.progress_bar) as out:
-            for i in indices:
+            for i in indices:  # pyright: ignore[reportGeneralTypeIssues]
                 if args.validate:
                     x = Image.open(filenames[i])
                 x = open(filenames[i], 'rb').read()

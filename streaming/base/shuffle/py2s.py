@@ -34,7 +34,7 @@ def _create_shards(sizes: NDArray[np.int64]) -> list[_Shard]:
     """
     shards = []
     ends = sizes.cumsum()
-    begins = ends - sizes
+    begins = ends - sizes  # pyright: ignore[reportGeneralTypeIssues]
     for shard, (begin, end) in enumerate(zip(begins, ends)):
         shard = _Shard(shard, np.arange(begin, end))
         shards.append(shard)

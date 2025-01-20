@@ -7,8 +7,8 @@ The prefix is used by all workers using this StreamingDataset of this training j
 prevent shared resources like shared memory from colliding.
 """
 
-from collections import Counter
 import os
+from collections import Counter
 from time import sleep
 from typing import Iterator, Union
 
@@ -42,9 +42,17 @@ def _get_path(prefix_int: int, name: str) -> str:
     Returns:
         str: Unique shared memory name.
     """
-    # FIXME: Adding a way to enable multiprocessing (independent or collaborative)
+    # NOTE: Adding a way to enable multiple independent or collaborative
+    # processes to execute this library. The `run_id` is used to make sure that
+    # different executions (with different `run_id`) do not interfere with each
+    # other and can allocate separate shared memories. The `master_port` is
+    # used to make sure that different processes, referring to different
+    # clients or PyTorch process groups (with different `master_port`), of the
+    # same federated experiment (same `run_id`) do not interfere with each
+    # other and can allocate separate shared memories.
     run_id = os.environ.get('RUN_UUID', str(os.getppid()))
-    return f'{run_id}_{prefix_int:06}_{name}'
+    master_port = os.environ.get('MASTER_PORT', str(os.getppid()))
+    return f'{run_id}_{master_port}_{prefix_int:06}_{name}'
 
 
 def _pack_locals(dirnames: list[str], prefix_int: int) -> bytes:
@@ -123,7 +131,7 @@ def _check_and_find(streams_local: list[str], streams_remote: list[Union[str, No
             # shared memory.
             matching_index = np.where(np.isin(streams_local, their_locals))[0]
             if matching_index.size > 0:
-                for idx in matching_index:
+                for idx in matching_index:  # pyright: ignore[reportGeneralTypeIssues]
                     # If there is a conflicting local directory for a non-None remote directory,
                     # raise an exception.
                     if streams_remote[idx] is not None:

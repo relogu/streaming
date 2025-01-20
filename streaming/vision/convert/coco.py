@@ -167,7 +167,7 @@ def each(dataset: _COCODetection, shuffle: bool) -> Iterable[dict[str, bytes]]:
         indices = np.random.permutation(len(dataset))
     else:
         indices = np.arange(len(dataset))
-    for idx in indices:
+    for idx in indices:  # pyright: ignore[reportGeneralTypeIssues]
         _, img_id, (htot, wtot), bbox_sizes, bbox_labels = dataset[idx]
 
         img_id = dataset.img_keys[idx]

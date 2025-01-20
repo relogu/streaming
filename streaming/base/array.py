@@ -87,14 +87,14 @@ class Array:
         if isinstance(at, (int, np.integer)):
             if -self.size <= at < 0:
                 at += self.size
-            return self.get_item(at)
+            return self.get_item(at)  # pyright: ignore[reportGeneralTypeIssues]
         elif isinstance(at, slice):
             items = []
             for idx in self._each_slice_index(at):
                 item = self.get_item(idx)
                 items.append(item)
             return items
-        elif isinstance(at, list):
+        elif isinstance(at, list):  # pyright: ignore[reportUnnecessaryIsInstance]
             items = []
             for sub in at:
                 item = self.__getitem__(sub)
@@ -102,7 +102,7 @@ class Array:
             return items
         elif isinstance(at, np.ndarray):  # pyright: ignore
             items = []
-            for sub in at:
+            for sub in at:  # pyright: ignore[reportGeneralTypeIssues]
                 item = self.__getitem__(sub)
                 items.append(item)
             return items
