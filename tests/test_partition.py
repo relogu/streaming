@@ -278,7 +278,7 @@ def test_partition_nodrop_norepeat(physical_nodes: int, canonical_nodes: int, ra
     # [0, num_samples), we know that no samples were dropped or repeated.
     samples_seen = []
     samples_seen_set = set()
-    for global_batch in partition:  # type: ignore[reportGeneralTypeIssues]
+    for global_batch in partition:  # pyright: ignore[reportGeneralTypeIssues]
         for sample in global_batch:
             samples_seen.append(sample)
             samples_seen_set.add(sample)

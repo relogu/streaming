@@ -11,7 +11,7 @@ from streaming.base.shuffle import (get_shuffle_py1br, get_shuffle_py1e, get_shu
 
 def check(get_shuffle: Callable) -> None:
     shard_sizes = 1 + np.arange(100)
-    dataset_size = sum(shard_sizes)  # type: ignore[reportGeneralTypeIssues]
+    dataset_size = sum(shard_sizes)  # pyright: ignore[reportGeneralTypeIssues]
     block_size = 300
     for num_canonical_nodes in [1, 2, 3]:
         for seed in [0, 1, 2]:

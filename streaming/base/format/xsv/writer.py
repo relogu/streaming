@@ -133,9 +133,9 @@ class XSVWriter(SplitWriter):
         offsets = header_offset + np.array([0] + sizes).cumsum().astype(np.uint32)
         obj = self.get_config()
         text = json.dumps(obj, sort_keys=True)
-        meta = (
-            num_samples.tobytes() + offsets.tobytes() +  # type: ignore[reportGeneralTypeIssues]
-            text.encode('utf-8'))
+        meta = num_samples.tobytes() + \
+            offsets.tobytes(  # pyright: ignore[reportGeneralTypeIssues]
+                ) + text.encode('utf-8')
 
         return data, meta
 

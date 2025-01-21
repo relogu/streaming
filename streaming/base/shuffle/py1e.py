@@ -41,7 +41,7 @@ def get_shuffle_py1e(shard_sizes: NDArray[np.int64],
     # Create each shard's sample ID span (begin, end excl).
     spans = []
     num_samples = 0
-    for shard_size in shard_sizes:  # type: ignore[reportGeneralTypeIssues]
+    for shard_size in shard_sizes:  # pyright: ignore[reportGeneralTypeIssues]
         span = num_samples, num_samples + shard_size
         spans.append(span)
         num_samples += shard_size
@@ -93,7 +93,7 @@ def get_shuffle_py1e(shard_sizes: NDArray[np.int64],
         # Iterate over each span and shift sample indices by sampling from uniform distribution.
         cn_sample_offset = 0
         sample_positions = np.arange(num_cn_samples).astype(np.float64)
-        for span_size in cn_span_sizes:  # type: ignore[reportGeneralTypeIssues]
+        for span_size in cn_span_sizes:  # pyright: ignore[reportGeneralTypeIssues]
 
             # Sample the block size uniformly in a fixed range centered around the block_size.
             # This helps to ensure that when training across a large number of nodes, downloads

@@ -303,7 +303,7 @@ def test_dataloader_device_per_stream_batching(local_remote_dir: tuple[str, str]
     # Transpose and reshape sample partition to get device batches, in training traversal order.
     sample_partition = sample_partition.transpose(3, 2, 0, 1, 4).flatten().reshape(-1, batch_size)
 
-    for device_batch in sample_partition:  # type: ignore[reportGeneralTypeIssues]
+    for device_batch in sample_partition:  # pyright: ignore[reportGeneralTypeIssues]
         if device_batch[0] < 200:
             # Ensure all samples are from stream 1
             assert (device_batch < 200).all()
