@@ -46,6 +46,7 @@ install_requires = [
     'Brotli>=1.0.9',
     'google-cloud-storage>=2.9.0,<2.11.0',
     'matplotlib>=3.5.2,<4',
+    'numpy>=1.21.5,<2.2.0',
     'paramiko>=2.11.0,<4',
     'python-snappy>=0.6.1,<1',
     'torch>=1.10,<3',
@@ -58,6 +59,7 @@ install_requires = [
     'azure-storage-blob>=12.0.0,<13',
     'azure-storage-file-datalake>=12.11.0,<13',
     'azure-identity>=1.13.0',
+    'catalogue>=2,<3',
 ]
 
 extra_deps = {}
@@ -74,9 +76,9 @@ extra_deps['dev'] = [
     'toml==0.10.2',
     'yamllint==1.35.1',
     'moto>=4.0,<6',
-    'fastapi==0.115.5',
-    'pydantic==2.10.2',
-    'uvicorn==0.32.1',
+    'fastapi==0.115.6',
+    'pydantic==2.10.5',
+    'uvicorn==0.34.0',
     'pytest-split==0.10.0',
 ]
 
@@ -124,11 +126,11 @@ extra_deps['alipan'] = [
 ]
 
 extra_deps['hf'] = [
-    'huggingface_hub>=0.23.4,<0.27',
+    'huggingface_hub>=0.23.4,<0.28',
 ]
 
 extra_deps['testing'] = [
-    'mosaicml-cli>=0.5.25,<0.7',
+    'mosaicml-cli>=0.5.25,<0.8',
 ]
 
 extra_deps['all'] = sorted({dep for deps in extra_deps.values() for dep in deps})

@@ -12,10 +12,10 @@ from math import ceil
 from typing import Optional, Sequence, Union
 
 import numpy as np
-from core.sim_spanner import SimulationSpanner
-from core.sim_world import SimulationWorld
 from numpy.typing import NDArray
 
+from simulation.core.sim_spanner import SimulationSpanner
+from simulation.core.sim_world import SimulationWorld
 from streaming.base import Stream, StreamingDataset
 from streaming.base.batching import generate_work
 from streaming.base.format import get_index_basename
@@ -200,6 +200,9 @@ class SimulationDataset(StreamingDataset):
             epoch_size_value = number_abbrev_to_int(epoch_size)
             if epoch_size_value < 0:
                 raise ValueError(f'Epoch size cannot be negative. Received {epoch_size_value}.')
+
+        # Determine if we should be changing the seed every epoch
+        self.epoch_seed_change = self.shuffle and self.sampling_method == 'balanced'
 
         # Initialize the Stream defaults and normalize to a list of Streams.
         if streams:
