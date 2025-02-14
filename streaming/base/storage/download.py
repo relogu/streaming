@@ -60,7 +60,8 @@ class CloudDownloader(abc.ABC):
         if remote_dir is None:
             return _LOCAL_DOWNLOADER()
 
-        logger.debug('Acquiring downloader client for remote directory %s', remote_dir)
+        # NOTE: Removing this comment as it is repeated too much when doing FL
+        # logger.debug('Acquiring downloader client for remote directory %s', remote_dir)
 
         prefix = urllib.parse.urlparse(remote_dir).scheme
         if prefix == 'dbfs' and remote_dir.startswith('dbfs:/Volumes'):
@@ -660,7 +661,7 @@ class DatabricksUnityCatalogDownloader(CloudDownloader):
 
     def _download_file_impl(self, remote: str, local: str, timeout: float) -> None:
         """Implementation of the download function for a file."""
-        from databricks.sdk.core import DatabricksError
+        from databricks.sdk.errors.base import DatabricksError
 
         if self._db_uc_client is None:
             self._create_db_uc_client()
@@ -727,7 +728,7 @@ class DBFSDownloader(CloudDownloader):
 
     def _download_file_impl(self, remote: str, local: str, timeout: float) -> None:
         """Implementation of the download function for a file."""
-        from databricks.sdk.core import DatabricksError
+        from databricks.sdk.errors.base import DatabricksError
 
         if self._dbfs_client is None:
             self._create_dbfs_client()
