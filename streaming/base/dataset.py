@@ -617,6 +617,9 @@ class StreamingDataset(Array, IterableDataset):
         # Remote the lock that makes it unpickleable.
         del self._shared_barrier.lock
 
+        # To keep the indices
+        self.last_worked_sample_ids: NDArray[np.int64] = np.empty(0, np.int64)
+
     def __del__(self) -> None:
         """Destructor, which releases its local working directories."""
         if hasattr(self, '_locals_shm'):
@@ -1495,19 +1498,19 @@ class StreamingDataset(Array, IterableDataset):
         # Also pre-increment the epoch counter.
         self._unique_worker_world = self._unique_rank_world.detect_workers()
         self._parallel_worker_world = self._parallel_rank_world.detect_workers()
-        epoch, sample_in_epoch = self._resume_incr_epoch()
-
-        # Get this worker's partition of samples to process.
-        sample_ids = self._get_work(epoch, sample_in_epoch)
-        if not len(sample_ids):  # Resumed at end of epoch, out of samples.
-            return
+        if not len(self.last_worked_sample_ids):
+            epoch, sample_in_epoch = self._resume_incr_epoch()
+            self.last_worked_sample_ids = self._get_work(epoch, sample_in_epoch)
 
         # Iterate over the samples while downloading ahead.
-        self._iterator = it = _Iterator(sample_ids)
+        self._iterator = it = _Iterator(self.last_worked_sample_ids)
         prepare_future = self._executor.submit(self._prepare_thread, it)
         prepare_future.add_done_callback(self.on_exception)
         ready_future = self._executor.submit(self._ready_thread, it)
         ready_future.add_done_callback(self.on_exception)
         yield from map(self.__getitem__, self._each_sample_id(it))
         wait([prepare_future, ready_future], return_when='FIRST_EXCEPTION')
+        # Get the last index we yielded, so that we can update the state
+        # Shifting the sample IDs by the number of samples we yielded.
+        self.last_worked_sample_ids = self.last_worked_sample_ids[it.yield_index:]
         it.exit()
