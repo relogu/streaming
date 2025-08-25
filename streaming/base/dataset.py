@@ -1508,9 +1508,14 @@ class StreamingDataset(Array, IterableDataset):
         prepare_future.add_done_callback(self.on_exception)
         ready_future = self._executor.submit(self._ready_thread, it)
         ready_future.add_done_callback(self.on_exception)
-        yield from map(self.__getitem__, self._each_sample_id(it))
-        wait([prepare_future, ready_future], return_when='FIRST_EXCEPTION')
-        # Get the last index we yielded, so that we can update the state
-        # Shifting the sample IDs by the number of samples we yielded.
-        self.last_worked_sample_ids = self.last_worked_sample_ids[it.yield_index:]
-        it.exit()
+        # NOTE: In most cases, this iterator is stopped via a `break` call in the loop that
+        # unfortunately doesn't allow to execute the following lines. In order to fix this, we
+        # add a `finally` clause so as to make sure that the shifting is executed.
+        try:
+            yield from map(self.__getitem__, self._each_sample_id(it))
+            wait([prepare_future, ready_future], return_when='FIRST_EXCEPTION')
+        finally:
+            # Get the last index we yielded, so that we can update the state
+            # Shifting the sample IDs by the number of samples we yielded.
+            self.last_worked_sample_ids = self.last_worked_sample_ids[it.yield_index:]
+            it.exit()
