@@ -5,6 +5,7 @@
 
 import hashlib
 import json
+import logging
 import os
 import tempfile
 from typing import Optional, Sequence
@@ -22,6 +23,8 @@ from streaming.base.registry_utils import create_registry
 from streaming.base.storage import CloudDownloader
 from streaming.base.util import retry, wait_for_file_to_exist
 from streaming.base.world import World
+
+logger = logging.getLogger(__name__)
 
 
 class Stream:
@@ -328,6 +331,9 @@ class Stream:
         """
         # Load compressed.
         data = open(zip_filename, 'rb').read()
+        # Check if the size is what we expect
+        if len(data) != zip_info.bytes:
+            raise ValueError(f'Size mismatch: {zip_filename}')
 
         # Validate what was downloaded.
         if self.validate_hash:
@@ -383,17 +389,34 @@ class Stream:
         else:
             # Missing raw. Uses zip?
             if zip_info:
-                # Ensure has zip.
+                has_succeeded = False
+                n_retry = 0
                 zip_filename = os.path.join(self.local, self.split, zip_info.basename)
-                if not os.path.isfile(zip_filename):
-                    self._download_file(zip_info.basename)
-                    delta += zip_info.bytes
+                while not has_succeeded:
+                    if n_retry > self.download_retry:
+                        raise RuntimeError(
+                            f'Failed to download and decompress {zip_info.basename} ' +
+                            f'after {self.download_retry} attempts')
+                    try:
+                        # Ensure has zip.
+                        if not os.path.isfile(zip_filename):
+                            self._download_file(zip_info.basename)
+                            delta += zip_info.bytes
 
-                # Validate and decompress.
-                self._decompress_shard_part(zip_info, zip_filename, raw_filename, compression)
-                delta += raw_info.bytes
-                if not self.safe_keep_zip:
-                    delta -= zip_info.bytes
+                        # Validate and decompress.
+                        self._decompress_shard_part(zip_info, zip_filename, raw_filename,
+                                                    compression)
+                        delta += raw_info.bytes
+                        if not self.safe_keep_zip:
+                            delta -= zip_info.bytes
+                        has_succeeded = True
+                    except Exception as e:
+                        logger.exception('Download or decompression of %s failed. Re-trying...',
+                                         zip_filename,
+                                         exc_info=e,
+                                         stack_info=True)
+                        os.remove(zip_filename)
+                        n_retry += 1
             else:
                 # Download raw.
                 self._download_file(raw_info.basename)
